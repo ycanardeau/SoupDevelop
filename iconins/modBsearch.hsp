@@ -1,0 +1,39 @@
+/*----------------------------------------------------------------------------
+	バイナリ検索 (by ぷまさん)
+----------------------------------------------------------------------------*/
+#module m
+
+#define mdim(%1,%2)dim %1,%2 : VirtualProtect %1,(%2)*4,$40,AZSD
+
+#deffunc bsearch_init
+	// mdim が正常に動かない環境があるので、コメントアウト
+	;mdim bm, 49 : pbm = varptr(bm)
+	// エラー確認
+/*
+	if stat == 0{
+		GetLastError : e = stat
+		sdim strErr, 261 : FormatMessage varptr(ret), 0, e, 0, varptr(strErr), 260, 0
+		dialog "["+e+"] "+strErr
+	}
+*/
+	
+	// これはうまく動いた
+	VirtualAlloc 0, 49*4, 0x2000/*MEM_RESERVE*/, 0x40/*PAGE_EXECUTE_READWRITE*/
+	VirtualAlloc stat, 49*4, 0x1000/*MEM_COMMIT*/, 0x40/*PAGE_EXECUTE_READWRITE*/
+	pbm = stat
+	dupptr bm, pbm, 49*4, 4
+	
+	bm. 0 = $81EC8B55,$000400EC,$10558B00,$758B5653,$01FE8314,$324CB60F,$227557FF
+	bm. 7 = $4539C033,$928E0F0C,$8B000000,$B60F0855,$D13B1014,$0086840F,$3B400000
+	bm.14 = $EB7C0C45,$C68B7BEB,$000100B9,$00BD8D00,$F3FFFFFC,$FF468DAB,$C085C933
+	bm.21 = $F88B5E7E,$111CB60F,$9DBC8941,$FFFFFC00,$7CC83B4F,$8B49EBEF,$B60F0845
+	bm.28 = $B60F0104,$3BFF327C,$8A2B75C7,$8BFE165C,$418D087D,$381C3AFF,$F88B1C75
+	bm.35 = $7C8DF92B,$FF85FF37,$5D8B2674,$8A4F4808,$143A1714,$10558B18,$458BEC74
+	bm.42 = $04B60F08,$858C0301,$FFFFFC00,$7C0C4D3B,$FFC883B2,$C95B5E5F,$000000C3
+	return
+
+#defcfunc bsearch int i, int pbuf, int size, var key, int lkey
+	prm = pbuf + i, size - i, varptr(key), lkey
+	res = callfunc(prm, pbm, 4)
+	return res
+#global

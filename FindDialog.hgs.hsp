@@ -1,0 +1,75 @@
+
+#include "user32.as"
+
+	// FindDialog
+	FindDialog = ginfo_newid
+	screen FindDialog, ginfo_dispx, ginfo_dispy, screen_hide
+	title "検索"
+	hFindDialog = hwnd
+	SetWindowLong hwnd, -16, $06c80000
+	SetWindowLong hwnd, -20, $00050101
+	syscolor 15
+	boxf
+
+	// label1
+	font "MS UI Gothic", 9, 0
+	syscolor 18
+	pos 8, 12
+	mes "検索する文字列:"
+
+	// textBox1
+	pos 130, 8
+	objsize 254, 18
+	sdim textBox1, 32767
+	textBox1 = ""
+	input textBox1, , , 32767
+	htextBox1 = objinfo_hwnd(stat)
+
+	// label2
+	font "MS UI Gothic", 9, 0
+	syscolor 18
+	pos 8, 42
+	mes "検索モード:"
+
+	// comboBox1
+	pos 88, 38
+	objsize 116, 20
+	combox comboBox1, 106, "標準\nエスケープシーケンス"
+	hcomboBox1 = objinfo_hwnd(stat)
+
+	// checkBox1
+	pos 4, 88
+	objsize 167, 24
+	checkBox1 = 0
+	chkbox "大文字と小文字を区別する", checkBox1
+	hcheckBox1 = objinfo_hwnd(stat)
+
+	// radioButton1
+	pos 235, 66
+	objsize 104, 24
+	radioButton1 = 0
+	chkbox "上へ", radioButton1
+	hradioButton1 = objinfo_hwnd(stat)
+	sendmsg hradioButton1, $f4, $9
+
+	// radioButton2
+	pos 284, 66
+	objsize 104, 24
+	radioButton2 = 0
+	chkbox "下へ", radioButton2
+	hradioButton2 = objinfo_hwnd(stat)
+	sendmsg hradioButton2, $f4, $9
+
+	// button1
+	pos 399, 8
+	objsize 89, 21
+	button gosub "次を検索", *button1_Clicked
+	hbutton1 = objinfo_hwnd(stat)
+
+	// button2
+	pos 399, 35
+	objsize 89, 21
+	button gosub "キャンセル", *button2_Clicked
+	hbutton2 = objinfo_hwnd(stat)
+
+	width 500, 118

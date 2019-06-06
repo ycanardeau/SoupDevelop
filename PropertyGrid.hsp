@@ -1,0 +1,272 @@
+
+#ifndef mod_PropertyGrid
+	
+#include "DataGrid.as"
+	
+#module mod_PropertyGrid
+	
+	#deffunc PropertyGridInit
+		dim m_hParentWnd
+		dim m_wndID
+		dim m_hwnd
+		dim m_propertyDataGridId
+	
+		dim m_selectedObjectID
+		dim m_comboBoxID
+		dim m_hComboBox
+		return
+	
+	#deffunc PropertyGridCreate\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		m_hParentWnd = hwnd
+		
+		m_wndID = ginfo_newid
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		title "プロパティ"
+		m_hwnd = hwnd
+		SetStyle hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+		syscolor 15 : boxf
+		
+		DataGridCreate ginfo_newid, 0, 2 : m_propertyDataGridId = stat
+		DataGridSetCellWidth m_propertyDataGridId, 0, 89
+		DataGridSetCellWidth m_propertyDataGridId, 1, 89
+	
+		m_selectedObjectID = 0
+		combox m_selectedObjectID, 106, ""
+		m_comboBoxID = stat
+		m_hComboBox = objinfo_hwnd(m_comboBoxID)
+	
+		oncmd gosub *OnSize, WM_SIZE
+		oncmd gosub *OnCommand, WM_COMMAND
+		oncmd gosub *OnSetFocus, WM_SETFOCUS
+		oncmd gosub *OnNotify, WM_NOTIFY
+	
+		DataGridShow m_propertyDataGridId
+	
+		gsel selWndID
+		return
+	
+	#defcfunc PropertyGridGetComboBoxWnd
+		return m_hComboBox
+	
+	*OnSize
+		PropertyGrid_Size
+		return
+	#deffunc PropertyGrid_Size\
+		local selWndID,\
+		local rect
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		MoveWindow m_hComboBox, 0, 0, ginfo_winx, 20, true
+		dim rect, 4
+		GetWindowRect m_hComboBox, varptr(rect)
+		DataGridMove m_propertyDataGridId, 0, rect(3) - rect(1), ginfo_winx, ginfo_winy - (rect(3) - rect(1))
+	
+		gsel selWndID
+		return
+	
+	*OnCommand
+		PropertyGrid_Command
+		return
+	#deffunc local PropertyGrid_Command\
+		local wp, local lp
+	
+		wp = wparam
+		lp = lparam
+		if (lp == DataGridGetWnd(m_propertyDataGridId)) {
+			switch (HIWORD(wp))
+			case 0x00000300/*EN_CHANGE*/
+				sendmsg m_hParentWnd, WM_COMMAND, wp, m_hwnd
+				swbreak
+			swend
+			return
+		}
+		if (lp == m_hComboBox) {
+			switch (HIWORD(wp))
+			case 1
+				sendmsg m_hParentWnd, WM_COMMAND, wp, lp
+				swbreak
+			swend
+			return
+		}
+		sendmsg m_hParentWnd, WM_COMMAND, wp, lp
+		return
+	
+	*OnSetFocus
+		SetFocus DataGridGetWnd(m_propertyDataGridId)
+		return
+	
+	*OnNotify
+		PropertyGrid_Notify
+		return
+	#deffunc local PropertyGrid_Notify\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		dupptr nmhdr, lparam, 12
+		switch (nmhdr(0))
+			case DataGridGetWnd(m_propertyDataGridId)
+				if (nmhdr(2) == BN_CLICKED) {
+					sendmsg m_hParentWnd, WM_NOTIFY, wparam, lparam
+				}
+				swbreak
+		swend
+	
+		gsel selWndID
+		return
+	
+	#defcfunc PropertyGridGetWnd
+		return m_hwnd
+	
+	#defcfunc PropertyGridGetDataGridWnd
+		return DataGridGetWnd(m_propertyDataGridId)
+	
+	#deffunc PropertyGridClear
+		m_selectedFilePath = ""
+		DataGridClear m_propertyDataGridId
+		PropertyGridSetComboBoxItems ""
+		PropertyGridSetComboBoxIndex -1
+		return
+		
+	#deffunc PropertyGridSetComboBoxItems str _items,\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel m_wndID
+		
+		objprm m_comboBoxID, _items
+	
+		gsel selWndID
+		return
+	
+	#deffunc PropertyGridSetComboBoxIndex int _index,\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel m_wndID
+		
+		objprm m_comboBoxID, _index
+	
+		gsel selWndID
+		return
+	
+	#deffunc PropertyGridSetData str _data,\
+		local data
+	
+		data = _data
+		DataGridSetRows m_propertyDataGridId, TSVDataBaseGetRows(data)
+		DataGridSet m_propertyDataGridId, data
+		repeat TSVDataBaseGetRows(data)
+			DataGridSetCellStyle m_propertyDataGridId, cnt, 0, DGCS_FIXED
+			DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_TEXTBOX
+			switch (DataGridGetCellData(m_propertyDataGridId, cnt, 0))
+			case "Checked"
+			case "FontBold"
+			case "FontGdiVerticalFont"
+			case "FontItalic"
+			case "FontStrikeout"
+			case "FontUnderline"
+			case "MaximizeBox"
+			case "MinimizeBox"
+			case "HorizontalScrollBar"
+			case "ReadOnly"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_DROPDOWNLIST
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "False\nTrue"
+				swbreak
+			case "BackColor"
+			case "ForeColor"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_COMBOBOX
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, {"ActiveBorder
+ActiveCaption
+ActiveCaptionText
+AppWorkspace
+ButtonFace
+ButtonHighlight
+ButtonShadow
+Control
+ControlDark
+ControlLight
+ControlLightLight
+ControlText
+Desktop
+GradientActiveCaption
+GradientInactiveCaption
+GrayText
+Highlight
+HighlightText
+HotTrack
+InactiveBorder
+InactiveCaption
+InactiveCaptionText
+Info
+InfoText
+Menu
+MenuBar
+MenuHighlight
+MenuText
+ScrollBar
+Window
+WindowFrame
+WindowText"}
+				swbreak
+			case "FormBorderStyle"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_DROPDOWNLIST
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "None\nFixedSingle\nFixed3D\nFixedDialog\nSizable\nFixedToolWindow\nSizableToolWindow"
+				swbreak
+			case "InitializationType"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_DROPDOWNLIST
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "Screen\nBgscr"
+				swbreak
+			case "JumpType"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_DROPDOWNLIST
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "Goto\nGosub"
+				swbreak
+			case "StartPosition"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_DROPDOWNLIST
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "Manual\nCenterScreen\nWindowsDefaultLocation"
+				swbreak
+			case "WindowID"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_COMBOBOX
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, "ginfo_newid"
+				swbreak
+			case "FontName"
+				swbreak
+			case "Items"
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_BUTTON
+				swbreak
+			default
+				DataGridSetCellStyle m_propertyDataGridId, cnt, 1, DGCS_TEXTBOX
+				DataGridSetDropDownData m_propertyDataGridId, cnt, 1, ""
+				swbreak
+			swend
+		loop
+		DataGridRedraw m_propertyDataGridId
+		return
+		
+	#defcfunc PropertyGridGetData
+		return DataGridGet(m_propertyDataGridId)
+	
+	#defcfunc PropertyGridGetSelectedRow
+		return DataGridGetSelectedRow(m_propertyDataGridId)
+		
+	#defcfunc PropertyGridGetSelectedColumn
+		return DataGridGetSelectedColumn(m_propertyDataGridId)
+	
+	#defcfunc PropertyGridGetCellData int _row, int _column
+		return DataGridGetCellData(m_propertyDataGridId, _row, _column)
+	
+	#deffunc PropertyGridSetCellData int _row, int _column, str _data
+		DataGridSetCellData m_propertyDataGridId, _row, _column, _data
+		return
+	
+#global
+	
+	PropertyGridInit
+	
+#endif

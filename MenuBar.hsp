@@ -1,0 +1,91 @@
+//////////メニューバー簡易作成モジュール//////////
+#cmpopt varinit 1
+#module
+#deffunc menubar str menu1
+	menu=menu1:b="":tag_(0)="":i=0:l=0:sindo=1
+	sdim tag,64,2:dim ct,3:dim rect,4
+	notesel menu
+	m_script += "\n\tCreateMenu"
+	m_script += "\n\tid = stat"
+	m_script += "\n\thmenubar = id"
+	m_script += "\n\thmenu(" + sindo + ") = id"
+	repeat -1
+		noteget b,i:kk=instr(b,0,":")
+
+		if kk!-1|i=notemax+1{ct(2)=ct(1):ct(1)=ct(0):tag(1)=tag(0):h=0:k=strmid(b,kk+1,1)
+			if ":"=k:tag(0)=strmid(b,kk+2,strlen(b)-kk-2):ct(0)=1:h=1
+			if "{"=k:ct(0)=2:h=1
+			if "}"=k:ct(0)=3:h=1
+			if "-"=k:ct(0)=4:h=1
+			if h=0&&i!notemax+1:i+:continue
+			if ct(1)=0:i+:continue
+			if ct(1)=1&&ct(0)=2:tag_(sindo)=tag(1)
+			if ct(1)=1&&ct(0)!2 {
+				l+
+				m_script += "\n\tAppendMenu hmenu(" + sindo + "), 0, " + l + ", \"" + tag(1) + "\""
+			}
+			if ct(1)=4&&ct(0)!2 {
+				m_script += "\n\tAppendMenu hmenu(" + sindo + "), $800, $0, \"\""
+			}
+			if ct(1)=2&&ct(2)=1 {
+				sindo+
+				m_script += "\n\tCreatePopupMenu"
+				m_script += "\n\thmenu(" + sindo + ") = stat"
+			}
+			if ct(1)=3:sindo-:if sindo<1:sindo=1:else{
+				m_script += "\n\tAppendMenu hmenu(" + sindo+ "), $10, hmenu(" + (sindo + 1) + "), \"" + tag_(sindo) + "\""
+			}
+		}
+		i+:if i=notemax+2:break
+	loop
+	m_script += "\n\tSetMenu hwnd, hmenubar"
+	m_script += "\n\tDrawMenuBar hwnd"
+	return m_script
+#global
+//////////////////////////////////////////////////
+
+#if 1
+	menu={"
+		::ファイル(&F)
+			:{
+				::新規作成(&N)
+					:{
+						::プロジェクト(&P)...\tCtrl+Shift+N
+						::ファイル(&F)...\tCtrl+N
+					:}
+				::開く(&O)
+					:{
+						::プロジェクト(&P)...\tCtrl+Shift+O
+						::ファイル(&F)...\tCtrl+O
+					:}
+				::閉じる(&C)
+					:{
+						::プロジェクト(&P)...\tCtrl+Shift+F4
+						::ファイル(&F)...\tCtrl+F4
+					:}
+				::上書き保存(&S)\tCtrl+S
+				::名前を付けて保存(&A)...
+				:-
+				::印刷(P)...\tCtrl+P
+				:-
+				::終了(&X)\tCtrl+Q
+			:}
+		::編集(&E)
+			:{
+				::元に戻す(&U)\tCtrl+Z
+				::やり直し(&R)\tCtrl+Y
+				:-
+				::切り取り(&T)\tCtrl+X
+				::コピー(&C)\tCtrl+C
+				::貼り付け(&P)\tCtrl+P
+				:-
+				::すべて選択(&A)\tCtrl+A
+			:}
+		::ヘルプ(&H)
+			:{
+				::バージョン情報(&A)...
+			:}
+	"}
+	menubar menu
+	dialog refstr
+#endif

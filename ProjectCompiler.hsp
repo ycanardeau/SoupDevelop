@@ -1,0 +1,229 @@
+
+#ifndef mod_ProjectCompiler
+	
+#include "TSVDataBase.as"
+	
+#include "Settings.hsp"
+#include "iconins\\modResource.hsp"
+#include "iconins\\modEXECheck.hsp"
+#include "iconins\\modBsearch.hsp"
+	
+#module mod_ProjectCompiler
+	
+#include "hspcmp.as"
+	
+#deffunc ProjectCompilerInit
+	sdim m_errorBuffer
+	return
+	
+#deffunc ProjectCompilerCompile str _scriptFilePath, int _debugWindow,\
+	local errorBufferSize,\
+	local ret
+	
+	hsc_ini _scriptFilePath
+	hsc_objname "obj"
+	hsc_compath SettingsGetHSPInstallPath() + "\\common\\"
+	hsc_comp 1, 0, _debugWindow
+	ret = stat
+	hsc3_messize errorBufferSize
+	sdim m_errorBuffer, errorBufferSize
+	hsc_getmes m_errorBuffer
+	if (ret != 0) {
+		return false
+	}
+	hsc_bye
+	return true
+	
+#deffunc ProjectCompilerRun\
+	local runtimeName,\
+	local cmdline,\
+	local errorBufferSize
+	
+	sdim runtimeName
+	hsc3_getruntime runtimeName, "obj"
+	if (runtimeName == "") {
+		runtimeName = "hsp3.exe"
+	}
+	
+	cmdline = "\"" + SettingsGetHSPInstallPath() + "\\" + runtimeName + "\" obj 0"
+	hsc3_run cmdline
+	
+	hsc3_messize errorBufferSize
+	sdim m_errorBuffer, errorBufferSize
+	hsc_getmes m_errorBuffer
+	return true
+	
+#define RT_ICON 3
+#define RT_GROUP_ICON 14
+	
+#deffunc ProjectCompilerMakeExe str _scriptFilePath, var _versionInfo,\
+	local exeFilePath, local objectFilePath, local packFileFilePath,\
+	local errorBufferSize,\
+	local ret,\
+	local runtimeName,\
+	local debugMode,\
+	local cmdline,\
+	local vib, local langID,\
+	local name, local value, local version,\
+	local exeFileBuffer, local exeFileSize,\
+	local dpmxOffset, local dpmxSize, local dpmxBuffer,\
+	local exeFileBufferOffset,\
+	local keyword,\
+	local newExeFileSize, local newExeFileBuffer, local newExeFileBufferOffset,\
+	local iconFilePath, local iconFileSize, local iconFileBuffer,\
+	local countOfIcon,\
+	local groupIconBuffer,\
+	local hResource,\
+	local resIconSize, local resIconBuffer
+	
+	exeFilePath = "hsptmp.exe"
+	objectFilePath = "start.ax"
+	packFileFilePath = "packfile"
+	
+	hsc_ini _scriptFilePath
+	hsc_objname objectFilePath
+	hsc_compath SettingsGetHSPInstallPath() + "\\common\\"
+	hsc_comp 0, 4, 0
+	/*エラー処理*/
+	
+	hsc3_make SettingsGetHSPInstallPath() + "\\runtime"
+	/*エラー処理*/
+	
+	hsc3_messize errorBufferSize
+	sdim m_errorBuffer, errorBufferSize
+	hsc_getmes m_errorBuffer
+	
+	index = instr(m_errorBuffer, 0, "Make custom execute file [")
+	getstr exeFilePath, m_errorBuffer, index, '[' : index += strsize
+	getstr exeFilePath, m_errorBuffer, index, ']'
+	exeFilePath = dir_cur + "\\" + exeFilePath
+	
+	
+	// 実行ファイルの読み込み
+		sdim exeFileBuffer
+		notesel exeFileBuffer
+		noteload exeFilePath
+		exeFileSize = strsize
+		dpmxOffset = GetDPMXAddress(exeFilePath)
+		if (dpmxOffset < 0) {
+			//errorno = 20	// [｢DPMX｣文字列が見つかりません]
+			//goto *error
+			//dialog "｢DPMX｣文字列が見つかりません", 1, ProductName
+			goto *@f
+		}
+	// DPMXデータ読み込み
+		dpmxSize = exeFileSize - dpmxOffset
+		sdim dpmxBuffer, dpmxSize
+		memcpy dpmxBuffer, exeFileBuffer, dpmxSize, , dpmxOffset	
+	
+	dimtype vib, 5
+	sdim iconFilePath, MAX_PATH
+	langID = 0x0411
+	newmod vib, VersionInfoBuilder, langID
+	repeat TSVDataBaseGetRows(_versionInfo)
+		name = TSVDataBaseGetCellData(_versionInfo, cnt, 0)
+		value = TSVDataBaseGetCellData(_versionInfo, cnt, 1)
+		switch (name)
+		case "_FILEVERSION"
+			split value, ".", version
+			setFileVersion vib, int(version(0)), int(version(1)), int(version(2)), int(version(3))
+			swbreak
+		case "_PRODUCTVERSION"
+			split value, ".", version
+			setProdVersion vib, int(version(0)), int(version(1)), int(version(2)), int(version(3))
+			swbreak
+		case "FileVersion"
+		case "ProductVersion"
+			swbreak
+		case "IconFilename"
+			iconFilePath = value
+			swbreak
+		case "LanguageID"
+			swbreak
+		default
+			setPropVal vib, name, value
+			swbreak
+		swend
+	loop
+	updateExeFile vib, exeFilePath
+	delmod vib
+	
+	
+	iconFileSize = exist(iconFilePath)
+	if (iconFileSize != -1) {
+		notesel iconFileBuffer
+		noteload iconFilePath
+	
+		if (lpeek(iconFileBuffer, 0) != 0x1000) {
+			
+		}
+		
+		countOfIcon = wpeek(iconFileBuffer, 0x4)
+	
+		sdim groupIconBuffer, countOfIcon * 0xe + 0x6
+		memcpy groupIconBuffer, iconFileBuffer, 0x6
+		repeat countOfIcon
+			memcpy groupIconBuffer, iconFileBuffer, 0xc, 0xe * cnt + 0x6, 0x10 * cnt + 0x6
+			wpoke groupIconBuffer, 0xe * (cnt + 1) + 0x4, cnt + 1
+		loop
+	
+		BeginUpdateResource exeFilePath, 0
+		hResource = stat
+		if (hResource == 0) {
+			
+		}
+	
+		UpdateResource hResource, RT_GROUP_ICON, 128, 1033, varptr(groupIconBuffer), 0xe * countOfIcon + 0x6
+	
+		repeat countOfIcon
+			resIconSize = lpeek(iconFileBuffer, 0x10 * cnt + 0xe)
+	
+			sdim resIconBuffer, resIconSize
+			memcpy resIconBuffer, iconFileBuffer, resIconSize, , lpeek(iconFIleBuffer, 0x10 * cnt + 0x12)
+			UpdateResource hResource, RT_ICON, cnt + 1, 1033, varptr(resIconBuffer), resIconSize
+		loop
+	
+		EndUpdateResource hResource, 0
+	}
+	
+	
+	bsearch_init
+	
+	// 新実行ファイルのサイズ取得
+		newExeFileSize = exist(exeFilePath)
+	
+	// 新実行ファイルの読み込み
+		sdim newExeFileBuffer, newExeFileSize + dpmxSize
+		bload exeFilePath, newExeFileBuffer
+		
+		if (true) {
+		// インデックスオフセットの検索
+			newExeFileBufferOffset = varptr(newExeFileBuffer)
+			keyword = str(dpmxOffset - $10000)
+			if (bsearch(0, newExeFileBufferOffset, newExeFileSize, keyword, strlen(keyword)) = -1) {
+				//errorno = 23	// [インデックスオフセットが見つかりません]
+				//goto *error
+				//dialog "インデックスオフセットが見つかりません", 1, ProductName
+				goto *@f
+			}
+		
+		// インデックスオフセットの修正
+			poke newExeFileBuffer, stat, ""+(newExeFileSize - $10000)
+		}
+	
+	// DPMXデータの反映
+		memcpy newExeFileBuffer, dpmxBuffer, dpmxSize, newExeFileSize
+		bsave exeFilePath, newExeFileBuffer
+	
+*@
+	if pbm@m != 0 : VirtualFree pbm@m, 49*4, 0x8000/*MEM_RELEASE*/  : pbm@m = 0
+	return true
+	
+#defcfunc ProjectCompilerGetMessage
+	return m_errorBuffer
+		
+#global
+	
+	ProjectCompilerInit
+	
+#endif

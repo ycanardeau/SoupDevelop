@@ -1,0 +1,210 @@
+// http://d.hatena.ne.jp/espresso3389/20100907 参考にしました
+#include "kernel32.as"
+#ifndef __VERSIONINFOBUILDER__
+#define __VERSIONINFOBUILDER__
+#module VersionInfoBuilder _langID, _fileVer, _prodVer, _props_name, _props_val, CODEPAGE_UCS2LE, _buffer, _buffer_maxsize, _buffer_current
+#modinit int langID
+	if langID == 0 : _langID = 0x0411 : else : _langID = langID
+	dim _fileVer, 4
+	dim _prodVer, 4
+	sdim _props_name : sdim _props_val
+	CODEPAGE_UCS2LE = 0x4b0
+return
+#modfunc dumpBuffer var dump
+	sdim dump, _buffer_current+1
+	memcpy dump, _buffer, _buffer_current, 0, 0
+return _buffer_current
+#modfunc setPropVal str name, str val
+	notesel _props_name
+	noteadd name
+	notesel _props_val
+	noteadd val
+return
+#modfunc setFileVersion int a, int b, int c, int d
+	_fileVer.0 = a
+	_fileVer.1 = b
+	_fileVer.2 = c
+	_fileVer.3 = d
+return
+#modfunc setProdVersion int a, int b, int c, int d
+	_prodVer.0 = a
+	_prodVer.1 = b
+	_prodVer.2 = c
+	_prodVer.3 = d
+return
+#modfunc build
+	buildVerInfo thismod
+return
+#modfunc updateExeFile str fileName
+	build thismod
+	_fileName = fileName
+	BeginUpdateResource varptr(_fileName), 0/*FALSE*/
+	hResource = stat
+	if stat == 0 : return -1
+	
+	UpdateResource hResource, 16/*RT_VERSION*/, 1/*VS_VERSION_INFO */, _langID, varptr(_buffer), _buffer_current
+	res = stat
+	
+	EndUpdateResource hResource, 0/*FALSE*/
+return res
+#modfunc clear
+	size = 100000 + strlen(_props_name)*2 + strlen(_props_val)*2
+	sdim _buffer, size
+	_buffer_maxsize = size
+	_buffer_current = 0
+return
+#modfunc writeWord int ptr, int w
+	poke _buffer, ptr, w & 255
+	poke _buffer, ptr + 1, w >> 8
+return
+#modcfunc pushWord int w
+	poke _buffer, _buffer_current, w & 255 : _buffer_current++
+	poke _buffer, _buffer_current, w >> 8 : _buffer_current++
+return _buffer_current - 2
+#modcfunc pushByte4 int a, int b, int c, int d
+	poke _buffer, _buffer_current, a : _buffer_current++
+	poke _buffer, _buffer_current, b : _buffer_current++
+	poke _buffer, _buffer_current, c : _buffer_current++
+	poke _buffer, _buffer_current, d : _buffer_current++
+return _buffer_current - 4
+#modfunc align4
+	_pos = _buffer_current & 3
+	if _pos == 0 : return
+	padLen = 4 - _pos
+	repeat padLen
+		poke _buffer, _buffer_current, 0 : _buffer_current++
+	loop
+return
+#modcfunc pushStr str _str
+	_pos = getPtr(thismod)
+	// unicodeに変換
+	sdim unistr, strlen(_str)*2+2
+	cnvstow unistr, _str
+	repeat
+		_w = wpeek(unistr, cnt*2)
+		dummy = pushWord(thismod, _w)
+		if _w == 0 : break
+	loop
+	align4 thismod
+return _pos
+#modcfunc getPtr
+return _buffer_current
+#modfunc writeLength int ptr
+	writeWord thismod, ptr, getPtr(thismod) - ptr - 2 
+return
+#modcfunc verStr array v
+return strf("%u, %u, %u, %u", v(0), v(1), v(2), v(3))
+#modfunc buildVerInfo
+
+	setPropVal thismod, "FileVersion", verStr(thismod, _fileVer)
+	setPropVal thismod, "ProductVersion", verStr(thismod, _prodVer)
+	
+	clear thismod	// buffer初期化
+	
+	ptrWholeSize = pushWord(thismod, 0)	// whole size (dummy)
+	dummy = pushWord(thismod, 0x34)
+	dummy = pushWord(thismod, 0x00)
+	dummy = pushStr(thismod, "VS_VERSION_INFO")
+	dummy = pushByte4(thismod, 0xbd, 0x04, 0xef, 0xfe) // Signature BD04EFFE
+	dummy = pushByte4(thismod, 0, 0, 1, 0) // struct version
+	dummy = pushWord(thismod, _fileVer(1))
+	dummy = pushWord(thismod, _fileVer(0))
+	dummy = pushWord(thismod, _fileVer(3))
+	dummy = pushWord(thismod, _fileVer(2))
+	dummy = pushWord(thismod, _prodVer(1))
+	dummy = pushWord(thismod, _prodVer(0))
+	dummy = pushWord(thismod, _prodVer(3))
+	dummy = pushWord(thismod, _prodVer(2))
+	dummy = pushByte4(thismod, 0x17, 0, 0, 0) // file flags mask (0x17)
+	dummy = pushByte4(thismod, 0, 0, 0, 0) // file flags (0)
+	dummy = pushByte4(thismod, 4, 0, 0, 0) // OS: 32-bit Windows (even on x64)
+	dummy = pushByte4(thismod, 1, 0, 0, 0) // file type: App(1)
+	dummy = pushByte4(thismod, 0, 0, 0, 0) // sub-file type: Unknown(0)
+	dummy = pushByte4(thismod, 0, 0, 0, 0)
+	dummy = pushByte4(thismod, 0, 0, 0, 0)
+ 
+	ptrStrFileInfoSize = pushWord(thismod, 0)
+	dummy = pushByte4(thismod, 0, 0, 1, 0)
+	dummy = pushStr(thismod, "StringFileInfo")
+	
+	ptrStrTable = pushWord(thismod, 0)
+	dummy = pushByte4(thismod, 0, 0, 1, 0)
+	
+	loc = strf("%04x%04x", _langID, CODEPAGE_UCS2LE)
+	dummy = pushStr(thismod, loc)
+
+	sdim first
+	sdim second
+	notesel _props_name
+	repeat notemax
+		notesel _props_name
+		noteget first, cnt
+		notesel _props_val
+		noteget second, cnt
+		
+		ptr = pushWord(thismod, 0)
+		ptrValLen = pushWord(thismod, 0)
+	
+		dummy = pushWord(thismod, 1)
+		dummy = pushStr(thismod, first)
+		ptrVal = getPtr(thismod)
+		dummy = pushStr(thismod, second)
+		vsize = getPtr(thismod) - ptrVal
+		writeWord thismod, ptrValLen, vsize / 2
+		writeLength thismod, ptr
+	loop
+	
+	writeLength thismod, ptrStrTable
+	writeLength thismod, ptrStrFileInfoSize
+	
+	dummy = pushWord(thismod, 0x44)
+	dummy = pushWord(thismod, 0)
+	dummy = pushWord(thismod, 1)
+	dummy = pushStr(thismod, "VarFileInfo")
+	dummy = pushWord(thismod, 0x24)
+	dummy = pushWord(thismod, 4)
+	dummy = pushWord(thismod, 0)
+	dummy = pushStr(thismod, "Translation")
+	dummy = pushWord(thismod, _langID)
+	dummy = pushWord(thismod, CODEPAGE_UCS2LE)
+	dummy = pushWord(thismod, 0x613c) // ???
+    
+	writeLength thismod, ptrWholeSize
+return
+
+#global
+#endif
+/*
+// 以下サンプル
+
+	newmod vib, VersionInfoBuilder, 0x411	// 日本 // 米国なら 0x409
+	
+	// プロパティを設定していく
+	setPropVal vib, "Comments", "Comments!!!"
+	setPropVal vib, "CompanyName", "CompanyName!!!"
+	setPropVal vib, "FileDescription", "FileDescription!!!"
+	setPropVal vib, "InternalName", "InternalName!!!"
+	setPropVal vib, "LegalCopyright", "LegalCopyright!!!"
+	setPropVal vib, "LegalTrademarks", "LegalTrademarks!!!"
+	setPropVal vib, "OriginalFilename", "OriginalFilename!!!"
+	setPropVal vib, "PrivateBuild", "PrivateBuild!!!"
+	setPropVal vib, "ProductName", "ProductName!!!"
+	setPropVal vib, "SpecialBuild", "SpecialBuild!!!"
+	// バージョンの設定
+	setFileVersion vib, 1, 2, 3, 4
+	setProdVersion vib, 5, 6, 7, 8
+	
+	dialog "exe", 16
+	if stat == 0 : end
+	
+	sdim fname, 1024
+	fname = refstr
+	
+	// 実行ファイルに書き込み
+	updateExeFile vib, fname
+	
+	// 作成されたデータをダンプする場合
+	;dumpBuffer vib, dump
+	
+	delmod vib
+*/

@@ -1,0 +1,39 @@
+
+#ifndef mod_ToolBox
+	
+#include "ListBox.as"
+	
+#module mod_ToolBox
+	
+	#deffunc ToolBoxInit
+		dimtype m_exListBox, 5
+		return
+	
+	#deffunc ToolBoxCreate
+		font "MS UI Gothic", 12
+		newmod m_exListBox, mod_ListBox, WS_EX_CLIENTEDGE, 0, {"ポインター
+Button
+CheckBox
+ComboBox
+InputBox
+Label
+ListBox
+MenuBar
+MessageBox
+RadioButton"}
+		return
+	
+	#defcfunc ToolBoxGetWnd
+		return ListBoxGetWnd(m_exListBox)
+	
+	#defcfunc ToolBoxGetCurSel
+		return ListBoxGetCurSel(m_exListBox)
+	
+	#defcfunc ToolBoxGetText int _index
+		return ListBoxGetText(m_exListBox, _index)
+	
+#global
+	
+	ToolBoxInit
+	
+#endif

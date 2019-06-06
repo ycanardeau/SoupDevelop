@@ -1,0 +1,52 @@
+#module Win32EXE
+#defcfunc IsWin32App str fname
+	tmp = 0
+	if exist(fname) == -1 : return 0
+	bload fname, tmp, 2, 0
+	if tmp == 0x5a4d /*MZ*/ : return 1
+return 0
+#defcfunc GetPEAddress str fname
+	if IsWin32App(fname) == 0 : return -1
+	tmp = 0 : pe_addr = 0
+	if exist(fname) == -1 : return -2
+	bload fname, pe_addr, 4, 0x3c		// PEヘッダアドレス
+	bload fname, tmp, 2, pe_addr		// PE実場所
+	if tmp == 0x4550 : return pe_addr	// 一応チェック
+return -3
+#defcfunc GetRSRCAddress str fname
+	pe = GetPEAddress(fname)
+	if pe < 0 : return -1
+	flg = 0 : sec = pe + 0xf8 : sdim s
+	if exist(fname) == -1 : return -2
+	// .rsrcセクションを検索する
+	repeat
+		bload fname, s, 8, sec
+		if s == "" : break
+		if s == ".rsrc"{
+			flg = 1
+			break
+		}
+		sec += 40
+	loop
+	if flg == 0 : return -3
+return sec
+#deffunc GetRSRCData str fname, array rsrc_data
+	dim rsrc_data, 40/4
+	addr = GetRSRCAddress(fname)
+	if addr < 0 : return -1
+	if exist(fname) == -1 : return -2
+	bload fname, rsrc_data, 40, addr
+return 0
+#defcfunc GetDPMXAddress str fname
+	dim rsrc
+	GetRSRCData fname, rsrc
+	if stat < 0 : return -1
+	if exist(fname) == -1 : return -2
+	tmp = 0
+	bload fname, tmp, 4, rsrc(5)+rsrc(4)
+	if tmp == 0x584d5044 /*DPMX*/ : return rsrc(5) + rsrc(4)
+return -3
+#global
+
+// DPMXの場所
+;mes GetDPMXAddress("hsptmp.exe")

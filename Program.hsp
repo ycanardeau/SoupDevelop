@@ -1,0 +1,50 @@
+
+#define global ProductName "SoupDevelop"
+#define global ProductVersion "1.00"
+
+#packopt name ProductName
+#packopt hide 1
+
+#epack "default.ini"
+
+#epack "Icons\\newproj"
+#epack "Icons\\additem"
+#epack "Icons\\openproj"
+#epack "Icons\\save"
+#epack "Icons\\saveall"
+#epack "Icons\\undo"
+#epack "Icons\\redo"
+#epack "Icons\\cut"
+#epack "Icons\\copy"
+#epack "Icons\\paste"
+#epack "Icons\\delete"
+#epack "Icons\\start"
+
+#epack "treeview.gif"
+
+#cmpopt varinit 1
+
+#ifndef _debug
+	if (exist("hspcmp.dll") == -1) {
+		dialog "hspcmp.dll が見つかりません。", 1, ProductName
+		end
+	}
+	if (exist("hspda.dll") == -1) {
+		dialog "hspda.dll が見つかりません。", 1, ProductName
+		end
+	}
+	if (exist("Footy2.dll") == -1) {
+		dialog "Footy2.dll が見つかりません。", 1, ProductName
+		end
+	}
+	if (exist("hscallbk.dll") == -1) {
+		dialog "hscallbk.dll が見つかりません。", 1, ProductName
+		end
+	}
+#endif
+
+#include "MainForm.hsp"
+
+*Main
+	MainFormCreate
+	stop

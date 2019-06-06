@@ -1,0 +1,1202 @@
+
+#ifndef mod_GuiEditor
+
+#include "user32.as"
+
+#include "FormObject.as"
+#include "RectangleSelection.as"
+#include "WindowScrollBar.as"
+#include "FormPainter.as"
+
+#include "ObjectList.hsp"
+#include "PropertyGrid.hsp"
+#include "ToolBox.hsp"
+#include "CodeGenerator.hsp"
+
+#module mod_UndoInfo\
+	m_indexList,\
+	m_option
+	
+	#modinit
+		dim m_indexList
+		dim m_option
+		return
+	
+	#modcfunc UndoInfoGetIndexList int _index
+		return m_indexList(_index)
+		
+	#modfunc UndoInfoSetIndexList int _index, int _indexList
+		m_indexList(_index) = _indexList
+		return
+		
+	#modcfunc UndoInfoGetOption int _index
+		return m_option(_index)
+		
+	#modfunc UndoInfoSetOption int _index, int _option
+		m_option(_index) = _option
+		return
+	
+#global
+
+#module mod_GuiEditor
+
+	#define GuiEditorVersion "1.00"
+	
+	#include "hspda.as"
+	
+	#const FormDrawStartPosX 15
+	#const FormDrawStartPosY 15
+	
+	#enum UndoOptionSet = 0
+	#enum UndoOptionDelete
+	#enum UndoOptionInsert
+	#enum UndoOptionSwap
+	
+	#deffunc GuiEditorInit
+		m_guiEditorVersion = GuiEditorVersion
+	
+		dim m_hParentWnd
+	
+		dim m_wndID
+		dim m_hwnd
+	
+		dimtype m_objectList, 5
+		dimtype m_tempObjectList, 5
+		dimtype m_clipObjectList, 5
+		dimtype m_undoObjectList, 5
+		dimtype m_undoInfo, 5
+		dim m_selectedObjectListID
+		dim m_selectedObjectID
+		sdim m_filePath
+		dim m_isEdit
+		dim m_cyMenu
+	
+		dim m_countOfUndo
+		dim m_undoSelected
+		return
+
+	#deffunc GuiEditorCreate\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		m_hParentWnd = hwnd
+	
+		m_wndID = ginfo_newid
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		title "GuiEditor"
+		m_hwnd = hwnd
+		SetStyle m_hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+		SetStyle m_hwnd, GWL_EXSTYLE, WS_EX_CLIENTEDGE
+		syscolor 5 : boxf
+	
+		WindowScrollBarCreate WS_HSCROLL
+		WindowScrollBarCreate WS_VSCROLL
+	
+		PropertyGridCreate
+		ToolBoxCreate
+	
+		oncmd gosub *OnMouseMove, WM_MOUSEMOVE
+		oncmd gosub *OnLButtonDown, WM_LBUTTONDOWN
+		oncmd gosub *OnLButtonUp, WM_LBUTTONUP
+		oncmd gosub *OnSetCursor, WM_SETCURSOR
+		oncmd gosub *OnCommand, WM_COMMAND
+		oncmd gosub *OnSize, WM_SIZE
+		oncmd gosub *OnScroll, WM_VSCROLL
+		oncmd gosub *OnScroll, WM_HSCROLL
+		oncmd gosub *OnWheel, WM_MOUSEWHEEL
+		oncmd gosub *OnWheel, 0x0000020e/*WM_MOUSEHWHEEL*/
+		oncmd gosub *OnContextMenu, WM_CONTEXTMENU
+		oncmd gosub *OnNotify, WM_NOTIFY
+	
+		gsel selWndID
+		return
+	
+	#defcfunc GuiEditorGetWnd
+		return m_hwnd
+	
+	#deffunc GuiEditorHide
+		gsel m_wndID, -1
+		return
+	
+	#defcfunc GuiEditorGetPropertyGridWnd
+		return PropertyGridGetWnd()
+	
+	#defcfunc GuiEditorGetToolBoxWnd
+		return ToolBoxGetWnd()
+	
+	#defcfunc GuiEditorGetSelectedObjectID int _objectListID
+		return m_selectedObjectID(_objectListID)
+	
+	#deffunc GuiEditorSetContextMenu int _hContextMenu
+		m_hContextMenu = _hContextMenu
+		return
+	
+	#deffunc GuiEditorClearPropertyGrid
+		PropertyGridClear
+		return
+	
+	#defcfunc GuiEditorIsEdit int _objectListID
+		return m_isEdit(_objectListID)
+	
+	#deffunc GuiEditorGenerate int _objectListID,\
+		local script
+	
+		CodeGeneratorGenerate m_objectList(_objectListID)
+		script = CodeGeneratorGetScript()
+		notesel script
+		notesave m_filePath(_objectListID) + ".hsp"
+		noteunsel
+		dialog m_filePath(_objectListID) + ".hsp に出力しました。", 0, ProductName
+		return
+	
+	#deffunc GuiEditorRedraw int _objectListID,\
+		local selWndID,\
+		local drawStartPosX, local drawStartPosY,\
+		local x, local y, local w, local h
+	
+		selWndID = ginfo_sel
+		gsel m_wndID
+	
+		redraw 0
+		syscolor 5 : boxf
+	
+		drawStartPosX = WindowScrollBarGetPos(SB_HORZ)
+		drawStartPosY = WindowScrollBarGetPos(SB_VERT)
+		FormObjectSetDrawStartPosX drawStartPosX
+		FormObjectSetDrawStartPosY drawStartPosY
+	
+		repeat ObjectListGetCount(m_objectList(_objectListID))
+			switch (ObjectListGetType(m_objectList(_objectListID), cnt))
+			case "Form"
+				w = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Height"))
+				syscolor 15 : boxf FormDrawStartPosX - drawStartPosX, FormDrawStartPosY - drawStartPosY, FormDrawStartPosX - drawStartPosX + w - 1, FormDrawStartPosY - drawStartPosY + h - 1
+				swbreak
+			case "Button"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawButton FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "CheckBox"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawCheckBox FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "ComboBox"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawComboBox FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "Label"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawLabel FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "RadioButton"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawRadioButton FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "InputBox"
+			case "MessageBox"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawTextBox FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "ListBox"
+				x = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Height"))
+				text = ObjectListGetValueByName(m_objectList(m_selectedObjectListID), cnt, "Text")
+				FormPainterDrawTextBox FormDrawStartPosX + x - drawStartPosX, FormDrawStartPosY + m_cyMenu(m_selectedObjectListID) + y - drawStartPosY, w, h, text
+				swbreak
+			case "MenuBar"
+				w = int(ObjectListGetValueByName(m_objectList(_objectListID), 0, "Width"))
+				h = GetSystemMetrics(SM_CYMENU)
+				FormPainterDrawMenuBar FormDrawStartPosX - drawStartPosX, FormDrawStartPosY - drawStartPosY, w, h
+				swbreak
+			swend
+		loop
+	
+		if (FormObjectGetPointingObject() != -1) {
+			FormObjectDrawSelectBox m_selectedObjectID(_objectListID)
+		}
+		
+		redraw 1
+	
+		gsel selWndID
+		return
+	
+	#deffunc GuiEditorOpenFile str _filePath,\
+		local objectListID,\
+		local moduleID,\
+		local name
+	
+		newmod m_objectList, mod_ObjectList : objectListID = stat
+		m_filePath(objectListID) = _filePath
+		m_isEdit(objectListID) = false
+		if (exist(_filePath) == 0) {
+			name = "Form" + getObjectNumber(objectListID, "Form")
+			ObjectListInsert m_objectList(objectListID), -1, -1, "Form" : moduleID = stat
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Name\t" + name
+			ObjectListInsertData m_objectList(objectListID), moduleID, "BackColor\tControl"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "FormBorderStyle\tFixedSingle"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "InitializationType\tScreen"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MaximizeBox\tFalse"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MinimizeBox\tTrue"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Width\t640"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Height\t480"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "StartPosition\tWindowsDefaultLocation"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Text\t" + name
+			ObjectListInsertData m_objectList(objectListID), moduleID, "WindowID\t0"
+	
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Active\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Command\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Create\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Destroy\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "DropFiles\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "HScroll\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "KeyDown\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "KeyPress\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "KeyUp\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "LButtonDblClick\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "LButtonDown\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "LButtonUp\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MButtonDblClick\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MButtonDown\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MButtonUp\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "MouseMove\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Move\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Notify\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Paint\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "QueryClose\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "RButtonDblClick\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "RButtonDown\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "RButtonUp\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Resize\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "SetFocus\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "Timer\t"
+			ObjectListInsertData m_objectList(objectListID), moduleID, "VScroll\t"
+	
+			GuiEditorSaveFile objectListID
+		} else {
+			newmod m_tempObjectList, mod_ObjectList
+	
+			vload_start m_filePath(objectListID)
+			if (stat != 0) {
+				delmod m_tempObjectList
+				dialog m_filePath(objectListID) + " の読み込みに失敗しました。", 1, ProductName
+				GuiEditorDestroy objectListID
+				return -1
+			}
+			vload_get m_tempObjectList
+			if (stat != 0) {
+				delmod m_tempObjectList
+				dialog m_filePath(objectListID) + " の読み込みに失敗しました。", 1, ProductName
+				GuiEditorDestroy objectListID
+				return -1
+			}
+			vload_end
+	
+			ObjectListCopyAll m_objectList(objectListID), m_tempObjectList
+			delmod m_tempObjectList
+		}
+	
+		m_selectedObjectID(objectListID) = 0
+	
+		m_scrollPosHorz(objectListID) = 0
+		m_scrollPosVert(objectListID) = 0
+	
+		m_cyMenu(objectListID) = 0
+	
+		newmod m_undoObjectList, mod_ObjectList
+		newmod m_undoInfo, mod_UndoInfo
+		m_countOfUndo(objectListID) = 0
+		m_undoSelected(objectListID) = 0
+	
+		GuiEditorChangeID objectListID
+		return objectListID
+	
+	#deffunc GuiEditorDestroy int _objectListID
+		delmod m_objectList(_objectListID)
+	
+		m_cyMenu(_objectListID) = 0
+		
+		delmod m_undoObjectList(_objectListID)
+		delmod m_undoInfo(_objectListID)
+		m_countOfUndo(_objectListID) = 0
+		m_undoSelected(_objectListID) = 0
+		return
+	
+	#deffunc GuiEditorSaveFile int _objectListID
+		newmod m_tempObjectList, mod_ObjectList
+		ObjectListCopyAll m_tempObjectList, m_objectList(_objectListID)
+	
+		vsave_start
+		vsave_put m_guiEditorVersion
+		vsave_put m_tempObjectList
+		vsave_end m_filePath(_objectListID)
+	
+		delmod m_tempObjectList
+	
+		sendUpdateMessage _objectListID, false
+		return
+	
+	#deffunc GuiEditorChangeID int _objectListID,\
+		local selWndID,\
+		local countOfObjects,\
+		local x, local y, local w, local h,\
+		local pointingObject
+	
+		selWndID = ginfo_sel
+		gsel m_wndID
+	
+		m_scrollPosHorz(m_selectedObjectListID) = WindowScrollBarGetPos(SB_HORZ)
+		m_scrollPosVert(m_selectedObjectListID) = WindowScrollBarGetPos(SB_VERT)
+	
+		m_selectedObjectListID = _objectListID
+	
+		m_cyMenu(_objectListID) = 0
+	
+		FormObjectInit
+		countOfObjects = ObjectListGetCount(m_objectList(_objectListID))
+		repeat countOfObjects
+			if (ObjectListGetType(m_objectList(_objectListID), cnt) == "MenuBar") {
+				m_cyMenu(_objectListID) = GetSystemMetrics(SM_CYMENU)
+			}
+		loop
+		repeat countOfObjects
+			switch (ObjectListGetType(m_objectList(_objectListID), cnt))
+			case "Form"
+				w = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Height"))
+				FormObjectCreate FOS_SELECT, 4 | 8, FormDrawStartPosX, FormDrawStartPosY, w, h
+				swbreak
+			case "Button"
+			case "CheckBox"
+			case "ComboBox"
+			case "Label"
+			case "RadioButton"
+			case "InputBox"
+			case "MessageBox"
+			case "ListBox"
+				x = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "X"))
+				y = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Y"))
+				w = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Width"))
+				h = int(ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Height"))
+				FormObjectCreate FOS_SELECT | FOS_MOVE, 1 | 2 | 4 | 8, FormDrawStartPosX + x, FormDrawStartPosY + m_cyMenu(_objectListID) + y, w, h
+				swbreak
+			case "MenuBar"
+				w = int(ObjectListGetValueByName(m_objectList(_objectListID), 0, "Width"))
+				h = GetSystemMetrics(SM_CYMENU)
+				FormObjectCreate FOS_SELECT, 0, FormDrawStartPosX, FormDrawStartPosY, w, h
+				swbreak
+			default
+				swbreak
+			swend
+		loop
+	
+		if (m_selectedObjectID(m_selectedObjectListID) < 0) {
+			m_selectedObjectID(_objectListID) = countOfObjects - 1
+		}
+		FormObjectSetPointingObject m_selectedObjectID(_objectListID)
+	
+		setDataGrid _objectListID, m_selectedObjectID(_objectListID)
+		resizeScrollBar _objectListID
+		WindowScrollBarSetPos SB_HORZ, m_scrollPosHorz(_objectListID)
+		WindowScrollBarSetPos SB_VERT, m_scrollPosVert(_objectListID)
+		GuiEditorRedraw _objectListID
+	
+		GuiEditorReloadPropertyGridComboBox _objectListID
+	
+		gsel selWndID
+		return
+	
+	#deffunc GuiEditorDeleteObject int _objectListID, int _objectID
+		if (_objectID == 0) {
+			return
+		}
+	
+		setUndo _objectListID, m_selectedObjectID(_objectListID), UndoOptionDelete
+		
+		ObjectListDelete m_objectList(_objectListID), _objectID
+		m_selectedObjectID(_objectListID) = -1
+		GuiEditorChangeID _objectListID
+		return
+	
+	#deffunc GuiEditorCopyObject int _objectListID, int _objectID,\
+		local clipObjectListID,\
+		local moduleID
+	
+		if (_objectID == 0) {
+			return
+		}
+	
+		delmod m_clipObjectList
+		newmod m_clipObjectList, mod_ObjectList : clipObjectListID = stat
+		ObjectListInsert m_clipObjectList(clipObjectListID), -1, -1, "" : moduleID = stat
+		ObjectListCopy m_clipObjectList(clipObjectListID), m_objectList(_objectListID), moduleID, _objectID
+		return
+	
+	#deffunc GuiEditorCutObject int _objectListID, int _objectID
+		if (_objectID == 0) {
+			return
+		}
+		
+		GuiEditorCopyObject _objectListID, _objectID
+		GuiEditorDeleteObject _objectListID, _objectID
+		return
+		
+	#deffunc GuiEditorPasteObject int _objectListID, int _objectID,\
+		local moduleID
+	
+		if (varuse(m_clipObjectList) == 0) {
+			return
+		}
+		
+		ObjectListInsert m_ObjectList(_objectListID), -1, -1, "" : moduleID = stat
+		ObjectListCopy m_ObjectList(_objectListID), m_clipObjectList(0), moduleID, 0
+		m_selectedObjectID(_objectListID) = -1
+		GuiEditorChangeID _objectListID
+	
+		setUndo _objectListID, m_selectedObjectID(_objectListID), UndoOptionInsert
+		return
+	
+	// 元に戻す
+	#deffunc GuiEditorUndo int _objectListID,\
+		local moduleID,\
+		local undoOption,\
+		local undoIndexList
+	
+		m_undoSelected(_objectListID)++
+		if (m_undoSelected(_objectListID) > m_countOfUndo(_objectListID)) {
+			m_undoSelected(_objectListID) = m_countOfUndo(_objectListID)
+			return
+		}
+	
+		undoOption = UndoInfoGetOption(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+		switch (undoOption)
+		case UndoOptionSet
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListDelete m_objectList(_objectListID), undoIndexList
+	
+			m_undoSelected(_objectListID)++
+	
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListInsert m_objectList(_objectListID), undoIndexList, -1, "" : moduleID = stat
+			ObjectListCopy m_objectList(_objectListID), m_undoObjectList(_objectListID), moduleID, m_countOfUndo(_objectListID) - m_undoSelected(_objectListID)
+			swbreak
+		case UndoOptionDelete
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListInsert m_objectList(_objectListID), undoIndexList, -1, "" : moduleID = stat
+			ObjectListCopy m_objectList(_objectListID), m_undoObjectList(_objectListID), moduleID, m_countOfUndo(_objectListID) - m_undoSelected(_objectListID)
+			m_selectedObjectID(_objectListID) = undoIndexList
+			swbreak
+		case UndoOptionInsert
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListDelete m_objectList(_objectListID), undoIndexList
+			m_selectedObjectID(_objectListID) = -1
+			swbreak
+		case UndoOptionSwap
+			swbreak
+		swend
+		GuiEditorChangeID _objectListID
+		return
+	
+	// やり直し
+	#deffunc GuiEditorRedo int _objectListID,\
+		local moduleID,\
+		local undoOption,\
+		local undoIndexList
+	
+		if (m_undoSelected(_objectListID) == 0) {
+			return
+		}
+	
+		undoOption = UndoInfoGetOption(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+		undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+		switch (undoOption)
+		case UndoOptionSet
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListDelete m_objectList(_objectListID), undoIndexList
+	
+			m_undoSelected(_objectListID)--
+	
+			undoIndexList = UndoInfoGetIndexList(m_undoInfo(_objectListID), m_countOfUndo(_objectListID) - m_undoSelected(_objectListID))
+			ObjectListInsert m_objectList(_objectListID), undoIndexList, -1, "" : moduleID = stat
+			ObjectListCopy m_objectList(_objectListID), m_undoObjectList(_objectListID), moduleID, m_countOfUndo(_objectListID) - m_undoSelected(_objectListID)
+			swbreak
+		case UndoOptionDelete
+			ObjectListDelete m_objectList(_objectListID), undoIndexList
+			m_selectedObjectID(_objectListID) = -1
+			swbreak
+		case UndoOptionInsert
+			ObjectListInsert m_objectList(_objectListID), undoIndexList, -1, "" : moduleID = stat
+			ObjectListCopy m_objectList(_objectListID), m_undoObjectList(_objectListID), moduleID, m_countOfUndo(_objectListID) - m_undoSelected(_objectListID)
+			swbreak
+		case UndoOptionSwap
+			swbreak
+		swend
+		GuiEditorChangeID _objectListID
+	
+		m_undoSelected(_objectListID)--
+		return
+	
+	#deffunc GuiEditorReloadPropertyGridComboBox int _objectListID,\
+		local countOfObjects,\
+		local items
+		
+		sdim items
+		countOfObjects = ObjectListGetCount(m_objectList(_objectListID))
+		repeat countOfObjects
+			items += ObjectListGetType(m_objectList(_objectListID), cnt)
+			items += " : " 
+			items += ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Name")
+			items += "\n"
+		loop
+		PropertyGridSetComboBoxItems items
+		PropertyGridSetComboBoxIndex m_selectedObjectID(_objectListID)
+		return
+	
+	*OnSize
+		GuiEditor_Resize
+		return
+	#deffunc local GuiEditor_Resize\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		resizeScrollBar m_selectedObjectListID
+		GuiEditorRedraw m_selectedObjectListID
+	
+		gsel selWndID
+		return
+	
+	*OnMouseMove
+		GuiEditor_MouseMove
+		return
+	#deffunc local GuiEditor_MouseMove\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		if (ToolBoxGetText(ToolBoxGetCurSel()) == "ポインター") {
+			FormObject_MouseMove
+		} else {
+			RectangleSelection_MouseMove
+		}
+	
+		gsel selWndID
+		return
+	
+	*OnLButtonDown
+		GuiEditor_LButtonDown
+		return
+	#deffunc local GuiEditor_LButtonDown\
+		local selWndID,\
+		local pointingObject
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		if (ToolBoxGetText(ToolBoxGetCurSel()) == "ポインター") {
+			FormObject_LButtonDown
+		} else {
+			RectangleSelection_LButtonDown
+		}
+	
+		SetFocus m_hwnd
+	
+		pointingObject = FormObjectGetPointingObject()
+		if (pointingObject == -1) {
+			pointingObject = 0
+			FormObjectSetPointingObject pointingObject
+		}
+		m_selectedObjectID(m_selectedObjectListID) = pointingObject
+		setDataGrid m_selectedObjectListID, pointingObject
+		GuiEditorRedraw m_selectedObjectListID
+	
+		PropertyGridSetComboBoxIndex m_selectedObjectID(m_selectedObjectListID)
+	
+		gsel selWndID
+		return
+	
+	#define SWAP(%1, %2) %1 += %2 : %2 = %1 - %2 : %1 -= %2
+	
+	*OnLButtonUp
+		GuiEditor_LButtonUp
+		return
+	#deffunc local GuiEditor_LButtonUp\
+		local selWndID,\
+		local toolBoxSelectedText,\
+		local drawStartPosX, local drawStartPosY,\
+		local name, local x, local y, local w, local h,\
+		local rect,\
+		local moduleID, local value
+	
+		dim rect, 4
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		drawStartPosX = WindowScrollBarGetPos(SB_HORZ)
+		drawStartPosY = WindowScrollBarGetPos(SB_VERT)
+	
+		toolBoxSelectedText = ToolBoxGetText(ToolBoxGetCurSel())
+		if (toolBoxSelectedText == "ポインター") {
+			// リサイズ
+			FormObject_LButtonUp
+	
+			pointingObject = FormObjectGetPointingObject()
+			if (pointingObject != -1) {
+				if (FormObjectIsEdit() != false) {
+				setUndo m_selectedObjectListID, m_selectedObjectID(m_selectedObjectListID), UndoOptionSet//Delete
+				switch (ObjectListGetType(m_objectList(m_selectedObjectListID), pointingObject))
+				case "Form"
+					w = FormObjectGetWidth(pointingObject)
+					h = FormObjectGetHeight(pointingObject)
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "Width", str(w)
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "Height", str(h)
+					resizeScrollBar m_selectedObjectListID
+					swbreak
+				case "Button"
+				case "CheckBox"
+				case "ComboBox"
+				case "Label"
+				case "RadioButton"
+				case "InputBox"
+				case "MessageBox"
+				case "ListBox"
+					x = FormObjectGetX(pointingObject)
+					y = FormObjectGetY(pointingObject)
+					w = FormObjectGetWidth(pointingObject)
+					h = FormObjectGetHeight(pointingObject)
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "X", str(x - FormDrawStartPosX)
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "Y", str(y - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)))
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "Width", str(w)
+					ObjectListSetValueByName m_objectList(m_selectedObjectListID), pointingObject, "Height", str(h)
+					swbreak
+				swend
+				setUndo m_selectedObjectListID, m_selectedObjectID(m_selectedObjectListID), UndoOptionSet//Insert
+				if (PropertyGridGetData() != ObjectListGet(m_objectList(m_selectedObjectListID), pointingObject)) {
+					setDataGrid m_selectedObjectListID, pointingObject
+				}
+				GuiEditorRedraw m_selectedObjectListID
+				}
+			}
+		} else {
+			// 作成
+			RectangleSelection_LButtonUp
+	
+			RectangleSelectionGetRect rect
+			if (rect(0) > rect(2)) {
+				SWAP rect(0), rect(2)
+			}
+			if (rect(1) > rect(3)) {
+				SWAP rect(1), rect(3)
+			}
+	
+			switch (toolBoxSelectedText)
+			case "Button"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "Button" : moduleID = stat
+				name = "button" + getObjectNumber(m_selectedObjectListID, "button")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "JumpType	Gosub"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "LabelName	" + name + "_Clicked"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 75
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 23
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "CheckBox"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "CheckBox" : moduleID = stat
+				name = "checkBox" + getObjectNumber(m_selectedObjectListID, "checkBox")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Checked	False"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 104
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 24
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "ComboBox"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "ComboBox" : moduleID = stat
+				name = "comboBox" + getObjectNumber(m_selectedObjectListID, "comboBox")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "DropDownHeight	106"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 121
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 20
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "Label"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "Label" : moduleID = stat
+				name = "label" + getObjectNumber(m_selectedObjectListID, "label")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontName	MS UI Gothic"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontSize	12"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontBold	False"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontGdiVerticalFont	False"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontItalic	False"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontStrikeout	False"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "FontUnderline	False"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "ForeColor	ControlText"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 100
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 23
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "RadioButton"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "RadioButton" : moduleID = stat
+				name = "radioButton" + getObjectNumber(m_selectedObjectListID, "radioButton")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Checked	False"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 104
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 24
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "InputBox"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "InputBox" : moduleID = stat
+				name = "inputBox" + getObjectNumber(m_selectedObjectListID, "inputBox")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "MaxLength	32767"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 100
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 19
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "MessageBox"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "MessageBox" : moduleID = stat
+				name = "messageBox" + getObjectNumber(m_selectedObjectListID, "messageBox")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "MaxLength	32767"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "HorizontalScrollBar	True"
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "ReadOnly	False"
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 100
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 96
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "ListBox"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "ListBox" : moduleID = stat
+				name = "listBox" + getObjectNumber(m_selectedObjectListID, "listBox")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				x = rect(0) - FormDrawStartPosX + drawStartPosX
+				value = str(x)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "X	" + value
+				y = rect(1) - (FormDrawStartPosY + m_cyMenu(m_selectedObjectListID)) + drawStartPosY
+				value = str(y)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Y	" + value
+				w = rect(2) - rect(0)
+				if (w == 0) {
+					w = 120
+				} else : if (w < 8) {
+					w = 8
+				}
+				value = str(w)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Width	" + value
+				h = rect(3) - rect(1)
+				if (h == 0) {
+					h = 88
+				} else : if (h < 8) {
+					h = 8
+				}
+				value = str(h)
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Height	" + value
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Text	" + name
+				swbreak
+			case "MenuBar"
+				ObjectListInsert m_objectList(m_selectedObjectListID), -1, -1, "MenuBar" : moduleID = stat
+				name = "menuBar" + getObjectNumber(m_selectedObjectListID, "menuBar")
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Name	" + name
+				ObjectListInsertData m_objectList(m_selectedObjectListID), moduleID, "Items	"
+				swbreak
+			swend
+	
+			m_selectedObjectID(m_selectedObjectListID) = -1
+			GuiEditorChangeID m_selectedObjectListID
+	
+			setUndo m_selectedObjectListID, m_selectedObjectID(m_selectedObjectListID), UndoOptionInsert
+		}
+	
+		gsel selWndID
+		return
+	
+	*OnSetCursor
+		return GuiEditor_SetCursor()
+	#defcfunc local GuiEditor_SetCursor\
+		local selWndID,\
+		local ret
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		ret = DefWindowProc(hwnd, WM_SETCURSOR, wparam, lparam)
+	
+		gsel selWndID
+		return ret
+	
+	*OnCommand
+		GuiEditor_Command
+		return
+	#deffunc local GuiEditor_Command\
+		local selWndID
+	
+		if (lparam == PropertyGridGetWnd()) {
+			switch (HIWORD(wparam))
+			case 0x00000300/*EN_CHANGE*/
+				setUndo m_selectedObjectListID, m_selectedObjectID(m_selectedObjectListID), UndoOptionSet
+				GuiEditorSetObjectList
+				setUndo m_selectedObjectListID, m_selectedObjectID(m_selectedObjectListID), UndoOptionSet
+				swbreak
+			swend
+			return
+		}
+		if (lparam == PropertyGridGetComboBoxWnd()) {
+			switch (HIWORD(wparam))
+			case 1
+				sendmsg PropertyGridGetComboBoxWnd(), CB_GETCURSEL, 0, 0
+				m_selectedObjectID(m_selectedObjectListID) = stat
+				GuiEditorChangeID m_selectedObjectListID
+				swbreak
+			swend
+			return
+		}
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		sendmsg m_hParentWnd, WM_COMMAND, wparam, lparam
+	
+		gsel selWndID
+		return
+	
+	#deffunc GuiEditorSetObjectList
+		ObjectListSet m_objectList(m_selectedObjectListID), m_selectedObjectID(m_selectedObjectListID), PropertyGridGetData()
+		GuiEditorChangeID m_selectedObjectListID
+		return
+	
+	*OnScroll
+		GuiEditor_Scroll
+		return
+	#deffunc local GuiEditor_Scroll\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		WindowScrollBar_Scroll
+		GuiEditorRedraw m_selectedObjectListID
+	
+		gsel selWndID
+		return
+	
+	*OnWheel
+		GuiEditor_Wheel
+		return
+	#deffunc local GuiEditor_Wheel\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		WindowScrollBar_Wheel
+		GuiEditorRedraw m_selectedObjectListID
+	
+		gsel selWndID
+		return
+	
+	*OnContextMenu
+		GuiEditor_ContextMenu
+		return
+	#deffunc local GuiEditor_ContextMenu\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+		
+		TrackPopupMenu m_hContextMenu, 0, ginfo_mx, ginfo_my, 0, m_hwnd, 0
+	
+		gsel selWndID
+		return
+	
+	*OnNotify
+		GuiEditor_Notify
+		return
+	#deffunc local GuiEditor_Notify\
+		local selWndID,\
+		local nmhdr,\
+		local data
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		dim nmhdr, 3
+		dupptr nmhdr, lparam, 12
+		switch (nmhdr(0))
+		case PropertyGridGetDataGridWnd()
+			if (nmhdr(2) == BN_CLICKED) {
+				sendmsg m_hParentWnd, WM_NOTIFY, wparam, lparam
+			}
+			swbreak
+		swend
+	
+		gsel selWndID
+		return
+	
+	#deffunc local setDataGrid int _objectListID, int _objectID
+		if (_objectID == -1) {
+			PropertyGridClear
+		} else {
+			PropertyGridSetData ObjectListGet(m_objectList(_objectListID), _objectID)
+		}
+		return
+	
+	#deffunc local setUndo int _objectListID, int _objectID, int _undoOption,\
+		local moduleID
+	
+		repeat m_undoSelected(_objectListID)
+			ObjectListDelete m_undoObjectList(_objectListID), m_countOfUndo(_objectListID) - 1 - cnt
+		loop
+		m_countOfUndo(_objectListID) -= m_undoSelected(_objectListID)
+		m_undoSelected(_objectListID) = 0
+		
+		ObjectListInsert m_undoObjectList(_objectListID), -1, -1, "" : moduleID = stat
+		ObjectListCopy m_undoObjectList(_objectListID), m_objectList(_objectListID), moduleID, _objectID
+	
+		UndoInfoSetIndexList m_undoInfo(_objectListID), m_countOfUndo(_objectListID), _objectID
+		UndoInfoSetOption m_undoInfo(_objectListID), m_countOfUndo(_objectListID), _undoOption
+		m_countOfUndo(_objectListID)++
+	
+		sendUpdateMessage _objectListID, true
+		return
+	
+	#deffunc local sendUpdateMessage int _objectListID, int _isEdit
+		m_isEdit(_objectListID) = _isEdit
+		sendmsg m_hParentWnd, WM_COMMAND, MAKELONG(m_wndID, 0x400/*EN_UPDATE*/), m_hwnd
+		return
+	
+	#defcfunc local getObjectNumber int _objectListID, str _name,\
+		local objectNumber,\
+		local previousObjectNumber
+	
+		objectNumber = 1
+		previousObjectNumber = 1
+		repeat
+			repeat ObjectListGetCount(m_objectList(_objectListID))
+				if (ObjectListGetValueByName(m_objectList(_objectListID), cnt, "Name") == _name + objectNumber) {
+					objectNumber++
+					break
+				}
+			loop
+			if (objectNumber == previousObjectNumber) {
+				break
+			}
+			previousObjectNumber = objectNumber
+		loop
+		return objectNumber
+	
+	#deffunc local resizeScrollBar int _objectListID,\
+		local selWndID,\
+		local w, local h
+	
+		selWndID = ginfo_sel
+		gsel m_wndID
+	
+		w = int(ObjectListGetValueByName(m_objectList(_objectListID), 0, "Width"))
+		h = int(ObjectListGetValueByName(m_objectList(_objectListID), 0, "Height"))
+		WindowScrollBarSetInfo SB_HORZ, 0, w + FormDrawStartPosX * 2, ginfo_winx
+		WindowScrollBarSetInfo SB_VERT, 0, h + FormDrawStartPosY * 2, ginfo_winy
+	
+		gsel selWndID
+		return
+
+#global
+
+	GuiEditorInit
+	
+#if 0
+	
+	screen 0, 960, 600
+	
+	GuiEditorCreate
+	SetParent GuiEditorGetWnd(), hwnd
+	MoveWindow GuiEditorGetWnd(), 160, 0, ginfo_winx - 160 * 2, ginfo_winy, true
+	ShowWindow GuiEditorGetWnd(), SW_SHOW
+	SetParent GuiEditorGetToolBoxWnd(), hwnd
+	MoveWindow GuiEditorGetToolBoxWnd(), 0, 0, 160, ginfo_winy, true
+	SetParent GuiEditorGetPropertyGridWnd(), hwnd
+	MoveWindow GuiEditorGetPropertyGridWnd(), ginfo_winx - 160, 0, 160, ginfo_winy, true
+	
+	onkey gosub *OnKeyDown
+	
+	GuiEditorOpenFile dir_cur + "\\HSPProjects\\Project1\\MainForm.hgs"
+	stop
+	
+*OnKeyDown
+	if (wparam == 46) {
+		GuiEditorDeleteObject 0, GuiEditorGetSelectedObjectID(0)
+	}
+	if (wparam == 'S') {
+		GuiEditorSaveFile 0
+		dialog "保存しました"
+	}
+	return
+	
+#endif
+
+#endif

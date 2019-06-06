@@ -1,0 +1,82 @@
+#include "kernel32.as"
+#include "shell32.as"
+#ifndef __MODUPX__
+#define __MODUPX__
+#module _MODUPX_
+#deffunc CompressUPX str upxpath, str outpath, str upxc, int show_window, int dpmx_oldpos
+
+	basefile = outpath
+;	実行ファイルの読み込み
+	exist basefile
+	if strsize == -1 : return -1
+
+	basesize = strsize
+	sdim basebuf, basesize
+	bload basefile, basebuf
+		
+	ii = basesize
+
+	;	オフセット確認圧縮
+	PackUPX upxpath, basefile, upxc, show_window
+	if stat == -1 : return -5
+		
+	exist basefile
+
+	upxsize = strsize
+
+	bsave basefile, basebuf
+
+	;	ファイルサイズチェック補正のバイナリ内検索 [Error 4]
+	index_str = str (dpmx_oldpos - $10000)
+	index_len = strlen (index_str)
+	
+	repeat index_len
+		index_value.cnt = int (strmid (index_str, cnt, 1)) + $30
+	loop
+	index_value = int ("$" + strf ("%x", index_value.1) + strf ("%x", index_value))
+
+	index_end = 0
+	ii = 0
+	repeat basesize - 3
+		if wpeek (basebuf, cnt) = index_value {
+			index_first = cnt
+			repeat index_len - 2, 2
+				if peek (basebuf, index_first + cnt) = index_value.cnt {
+					index_end = cnt + 1
+				} else { 
+					break 
+				}
+			loop
+			if index_len = index_end : ii = index_first : break
+		}
+	loop
+	if ii = 0 : return -4
+
+	poke basebuf, ii, ""+(upxsize - $10000)
+	bsave basefile, basebuf, basesize
+
+;	圧縮作成
+	PackUPX upxpath, basefile, upxc, show_window
+	if stat == -1 : return -5
+
+return upxsize
+#deffunc PackUPX str upxpath, str outpath, str upxc, int show_window
+
+	if upxpath == ""{
+		packerfile = ""+dirinfo (1)+"\\UPX.exe"
+	}else{
+		packerfile = upxpath
+	}
+	parameter = "-f "+upxc+" \""+outpath+"\""
+	
+	exist packerfile
+	if strsize == -1 : return -1
+
+	dim prm, 15
+	prm = 60, $40, 0, 0, varptr (packerfile), varptr (parameter), 0, show_window
+	ShellExecuteEx varptr (prm)
+	WaitForSingleObject prm.14, -1
+return
+#global
+
+;CompressUPX "", "test.exe", "", 1, 1

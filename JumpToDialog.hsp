@@ -1,0 +1,97 @@
+
+#ifndef mod_JumpToDialog
+
+#include "user32.as"
+
+#module mod_JumpToDialog
+
+#deffunc JumpToDialogInit
+	dim m_parentWndID
+	dim m_hParentWnd
+
+	dim JumpToDialog
+	
+	dim m_stat
+	dim m_refstr
+	mref m_stat, 64
+	mref m_refstr, 65
+	return
+
+#deffunc JumpToDialogCreate\
+	local selWndID
+
+	selWndID = ginfo_sel
+	m_parentWndID = selWndID
+	m_hParentWnd = hwnd
+
+#include "JumpToDialog.hgs.hsp"
+	
+	oncmd *cancelButton_Clicked, WM_CLOSE
+
+	gsel selWndID
+	return
+
+*OnClose
+	JumpToDialogHide
+	return 0
+
+#deffunc JumpToDialogShow\
+	local rect
+	
+	jumpLineNumber = ""
+	sendmsg hjumpLineNumber, WM_SETTEXT, 0, varptr(jumpLineNumber)
+
+	dim rect, 4
+
+	m_hSelectedFocus = GetFocus()
+
+	SetFocus m_hParentWnd
+	gsel m_parentWndID
+
+	GetWindowRect m_hParentWnd, varptr(rect)
+	rect(2) -= rect(0) : rect(3) -= rect(1)
+
+	EnableWindow m_hParentWnd, 0
+
+	gsel JumpToDialog
+	width , , rect(0) + (rect(2) - ginfo_sizex) / 2, rect(1) + (rect(3) - ginfo_sizey) / 2
+	gsel JumpToDialog, 1
+
+	SetFocus hjumpLineNumber
+	
+	stop
+*dialogEnd
+	return
+
+#deffunc JumpToDialogHide
+	gsel m_parentWndID, 1
+	gsel JumpToDialog, -1
+	EnableWindow m_hParentWnd, 1
+	gsel m_parentWndID, 1
+	SetFocus m_hSelectedFocus
+	return
+	
+*OKButton_Clicked
+	JumpToDialogHide
+	m_stat = 1
+	m_refstr = jumpLineNumber
+	goto *dialogEnd
+
+*cancelButton_Clicked
+	JumpToDialogHide
+	m_stat = 0
+	m_refstr = ""
+	goto *dialogEnd
+	
+#global
+
+	JumpToDialogInit
+
+#if 0
+
+	JumpToDialogCreate
+	JumpToDialogShow
+
+#endif
+
+#endif

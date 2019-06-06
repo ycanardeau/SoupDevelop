@@ -1,0 +1,33 @@
+
+#include "user32.as"
+
+	// ItemCollectionEditor
+	ItemCollectionEditor = ginfo_newid
+	screen ItemCollectionEditor, 640, 380, screen_fixedsize | screen_hide
+	title "項目コレクション エディター"
+	hItemCollectionEditor = hwnd
+	SetWindowLong hwnd, GWL_HWNDPARENT, m_hParentWnd
+	SetStyle hwnd, GWL_STYLE, 0, WS_MINIMIZEBOX
+	syscolor 15
+	boxf
+
+	// itemCollectionTextBox
+	pos 16, 16
+	objsize 608, 317
+	sdim itemCollectionTextBox, 32767
+	itemCollectionTextBox = ""
+	mesbox itemCollectionTextBox, , , 5, 32767
+	hitemCollectionTextBox = objinfo_hwnd(stat)
+
+	// OKButton
+	pos 466, 341
+	objsize 75, 23
+	button "OK", *OKButton_Clicked
+	hOKButton = objinfo_hwnd(stat)
+	sendmsg hOKButton, BM_SETSTYLE, BS_DEFPUSHBUTTON, true
+
+	// cancelButton
+	pos 549, 341
+	objsize 75, 23
+	button "キャンセル", *cancelButton_Clicked
+	hcancelButton = objinfo_hwnd(stat)

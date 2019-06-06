@@ -1,0 +1,411 @@
+/*----------------------------------------------------------------------------
+	lhspicc.exe
+	for Windows NT
+
+	by Kpan
+	Let's HSP!
+	http://lhsp.s206.xrea.com/
+	
+	lhspicc.exe v0.2 をベースに改良しています
+	作成 2012.04.08 Ver 1.00 by inovia https://twitter.com/#!/hinekure_inovia
+	修正 2012.06.21 Ver 1.01 by inovia https://twitter.com/#!/hinekure_inovia
+----------------------------------------------------------------------------*/
+#runtime "hsp3cl"
+#packopt name "iconins"
+#cmpopt optcode 1
+
+#include "kernel32.as"
+#include "modResource.hsp"
+#include "modBsearch.hsp"
+#include "modEXECheck.hsp"
+#include "modUPX.hsp"
+#include "modCmdSplit.hsp"
+
+#define LOAD_LIBRARY_AS_DATAFILE $2
+
+#define RT_ICON 3
+#define RT_GROUP_ICON 14
+
+/*----------------------------------------------------------------------------
+	メイン
+----------------------------------------------------------------------------*/
+	bsearch_init	// バイナリ検索初期化(最後解放が必要)
+
+	langID = 0x0411	// デフォルトは日本
+	use_upx = 0		// UPX圧縮を使用するか？
+
+	mes "iconins.exe v1.00\nBasic program has been created by Kpan.\nModified by inovia.\n"
+
+	if varptr(BeginUpdateResource) = 0 {
+		errorno = 1	// [Windows 9x系OSでは利用できません]
+		goto *error
+	}
+
+	if dirinfo(4) = "" {
+		mes "使用法:\niconins -e\"実行ファイルパス\" -i\"アイコンファイルパス\" -v\"バージョンファイルパス\" -l\"言語ID（オプション）\" -u\"UPX（オプション）\"\n"
+		stop
+	}
+
+	sdim path_icon, 260 + 1
+	sdim path_ver, 260 + 1
+	sdim path_exe, 260 + 1
+	sdim path_command, 1024
+	sdim lang, 260 + 1
+	sdim upx, 260 + 1
+	
+	mask = 0
+
+;	コマンドライン文字列の取得
+	path_command = dirinfo(4)
+	repeat strlen(path_command)
+		path_value = peek(path_command, cnt)
+
+		if path_value = '-' {
+			path_value = peek(path_command, cnt + 1)
+
+			if path_value = 'e' {
+				mask |= 1
+				getstr path_exe, path_command, cnt + 3, '\"'
+				continue cnt + strsize
+			}
+			if path_value = 'i' {
+				mask |= 2
+				getstr path_icon, path_command, cnt + 3, '\"'
+				continue cnt + strsize
+			}
+			if path_value = 'v' {
+				mask |= 4
+				getstr path_ver, path_command, cnt + 3, '\"'
+				continue cnt + strsize
+			}
+			if path_value = 'l' {
+				mask |= 8
+				getstr lang, path_command, cnt + 3, '\"'
+				langID = int(lang)
+				continue cnt + strsize
+			}
+			if path_value = 'u' {
+				mask |= 16
+				getstr upx, path_command, cnt + 3, '\"'
+				use_upx = int(upx)
+				continue cnt + strsize
+			}
+		}
+	loop
+
+;	実行ファイルの有無チェック
+
+	exist path_exe
+	path_exe_size = strsize
+	if strsize = -1 {
+		errorno = 10	// [実行ファイルが見つかりません]
+		goto *error
+	}
+	
+	// カレントディレクトリを移動
+	chdir getpath(path_exe, 32)
+	
+	// パスが正しいかチェック
+	gosub *chkPath
+	
+	gosub *getDPMX
+
+/*----------------------------------------------------------------------------
+	アイコン変更処理
+----------------------------------------------------------------------------*/
+
+;	アイコンファイルの有無チェック
+	exist path_icon
+	if strsize != -1 {
+		// アイコンファイルが指定されている場合のみ実行
+	
+	;	アイコンファイルの読み込み
+		notesel buf_icon
+		noteload path_icon
+	
+	;	アイコンファイルの簡易チェック
+		if lpeek(buf_icon) != $10000 {
+			errorno = 21	// [不正なアイコンファイルです]
+			goto *error
+		}
+		
+	// ↓コンソールにも適用できるようにコメントアウト
+	/*
+	;	HSP3製実行ファイルの簡易チェック
+		LoadLibraryEx path_exe, 0, LOAD_LIBRARY_AS_DATAFILE
+		hFile = stat
+		if hFile = 0 {
+			errorno = 12	// [実行ファイルの読み込みに失敗しました]
+			goto *error
+		}
+		FindResource hFile, 128, RT_GROUP_ICON
+		if stat = 0 {
+			FreeLibrary hFile
+	
+			errorno = 13	// [HSP製実行ファイルではありません]
+			goto *error
+		}
+		FreeLibrary hFile
+	*/
+		
+	;	アイコンファイル内のアイコン数取得
+		count_icon = wpeek(buf_icon, $4)
+	
+	;	グループアイコンデータ生成
+		sdim buf_groupicon, count_icon * $E + $6
+		memcpy buf_groupicon, buf_icon, $6
+		repeat count_icon
+			memcpy buf_groupicon, buf_icon, $C, $E * cnt + $6, $10 * cnt + $6
+			wpoke buf_groupicon, $E * (cnt + 1) + $4, cnt + 1
+		loop
+	
+	;	リソース変更の開始宣言
+		BeginUpdateResource path_exe, 0
+		if stat = 0 {
+			errorno = 22	// [リソース変更の開始に失敗しました]
+			goto *error
+		}
+		hResource = stat
+	
+	;	グループアイコンデータの反映
+		UpdateResource hResource, RT_GROUP_ICON, 128, 1033, varptr(buf_groupicon), $E * count_icon + $6
+	
+	;	個別アイコンデータの生成と反映
+		repeat count_icon
+			size_resicon = lpeek(buf_icon, $10 * cnt + $E)
+	
+			sdim buf_resicon, size_resicon
+			memcpy buf_resicon, buf_icon, size_resicon, , lpeek(buf_icon, $10 * cnt + $12)
+			UpdateResource hResource, RT_ICON, cnt + 1, 1033, varptr(buf_resicon), size_resicon
+		loop
+	
+	;	リソース変更の終了宣言
+		EndUpdateResource hResource, 0
+	
+	}
+	
+;	バージョンファイルの有無チェック
+	exist path_ver
+	path_ver_size = strsize
+	if strsize != -1 {
+		// バージョン設定ファイル読み込み
+		notesel ver_buf
+		noteload path_ver
+		// パラメータを分離する
+		cmdSplit ver_buf, fver, pver, name, val
+		
+		newmod vib, VersionInfoBuilder, langID	// 日本 // 米国なら 0x409
+		notesel name
+		repeat notemax
+			notesel name
+			noteget tmp, cnt
+			notesel val
+			noteget tmp2, cnt
+			setPropVal vib, tmp, tmp2
+		loop
+	
+		// バージョンの設定
+		setFileVersion vib, fver(0), fver(1), fver(2), fver(3)
+		setProdVersion vib, pver(0), pver(1), pver(2), pver(3)
+	
+		// 実行ファイルに書き込み
+		updateExeFile vib, path_exe
+		if stat == -1 {
+			errorno = 22	// [リソース変更の開始に失敗しました]
+			goto *error
+		}
+	
+		delmod vib
+	}
+	
+	// UPX圧縮
+	if use_upx == 1{
+		// UPXのパス, 書き換える実行ファイル, コマンド, ウィンドウ表示, DPMX修正, 旧DPMX位置
+		CompressUPX "", path_exe, "--compress-icons=0", 1, pos_dpmx
+		pos_dpmx = stat
+		if stat == -1{
+			errorno = 31
+			goto *error
+		}else:if stat == -2{
+			errorno = 32
+			goto *error
+		}else:if stat == -3{
+			errorno = 33
+			goto *error
+		}else:if stat == -4{
+			errorno = 34
+			goto *error
+		}else:if stat == -5{
+			errorno = 35
+			goto *error
+		}
+		
+	}
+	
+	// DPMXとかの修正
+	gosub *fix
+
+	mes "作業が終了しました."
+	
+	// 解放作業
+	gosub *release
+	
+end
+*getDPMX
+	
+	;	実行ファイルの読み込み
+		notesel buf_exe
+		noteload path_exe
+		size_exe = strsize
+	/*
+	;	｢DPMX｣文字列のバイナリ検索
+	
+		point_exe = varptr(buf_exe)
+		keyword = "DPMX"
+	
+		i = 0
+		repeat
+			if bsearch(i, point_exe, size_exe, keyword, 4) = -1 {
+				errorno = 20	// [｢DPMX｣文字列が見つかりません]
+				goto *error
+			}
+			i += stat + 1
+	
+	;		｢DPMX｣文字列のカウント
+			if cnt > 0 : pos_dpmx = i - 1 : break
+		loop
+	*/
+		pos_dpmx = GetDPMXAddress(path_exe)
+		if pos_dpmx < 0{
+			errorno = 20	// [｢DPMX｣文字列が見つかりません]
+			goto *error
+		}
+	;	DPMXデータ読み込み
+		size_dpmx = size_exe - pos_dpmx
+		sdim buf_dpmx, size_dpmx
+		memcpy buf_dpmx, buf_exe, size_dpmx, , pos_dpmx
+return
+*fix
+/*----------------------------------------------------------------------------
+	変更後処理
+----------------------------------------------------------------------------*/
+	;if path_exe_size != -1 | path_ver_size != -1 | use_upx == 1{
+	;	新実行ファイルのサイズ取得
+		exist path_exe
+		if strsize = -1 {
+			errorno = 24	// [書き換え済み実行ファイルが見つかりません]
+			goto *error	
+		}
+		size_exenew = strsize
+	
+	;	新実行ファイルの読み込み
+		sdim buf_exenew, size_exenew + size_dpmx
+		bload path_exe, buf_exenew
+		
+		if use_upx == 0{
+		;	インデックスオフセットの検索
+			point_exenew = varptr(buf_exenew)
+			keyword = str(pos_dpmx - $10000)
+			if bsearch(0, point_exenew, size_exenew, keyword, strlen(keyword)) = -1 {
+				errorno = 23	// [インデックスオフセットが見つかりません]
+				goto *error
+			}
+		
+		;	インデックスオフセットの修正
+			poke buf_exenew, stat, ""+(size_exenew - $10000)
+		}
+	
+	;	DPMXデータの反映
+		memcpy buf_exenew, buf_dpmx, size_dpmx, size_exenew
+		bsave path_exe, buf_exenew
+	;}
+return
+/*----------------------------------------------------------------------------
+	エラー
+----------------------------------------------------------------------------*/
+*error
+	mes "[ERROR] No."+strf("%02d", errorno)
+	
+	switch errorno
+		case 1
+			mes "Windows 9x系OSでは利用できません"
+			swbreak
+		case 10
+			mes "実行ファイルが見つかりません"
+			swbreak
+		case 12
+			mes "実行ファイルの読み込みに失敗しました"
+			swbreak
+		case 13
+			mes "HSP製実行ファイルではありません"
+			swbreak
+		case 20
+			mes "｢DPMX｣文字列が見つかりません"
+			swbreak
+		case 21
+			mes "不正なアイコンファイルです"
+			swbreak
+		case 22
+			mes "リソース変更の開始に失敗しました"
+			swbreak
+		case 23
+			mes "インデックスオフセットが見つかりません"
+			swbreak
+		case 24
+			mes "書き換え済み実行ファイルが見つかりません"
+			swbreak
+		case 31
+			mes "実行ファイルが見つかりません"
+			swbreak
+		case 32
+			mes "ヘッダー識別子\"DPMX\"のバイナリ内検索に失敗しました"
+			swbreak
+		case 33
+			mes "オフセットの確認に失敗しました"
+			swbreak
+		case 34
+			mes "ファイルサイズチェック補正のバイナリ内検索に失敗しました"
+			swbreak
+		case 35
+			mes "UPX.exe が見つかりません"
+			swbreak
+		case 41
+			mes "アイコンファイルが見つかりません"
+			swbreak
+		case 42
+			mes "バージョンファイルが見つかりません"
+			swbreak
+		default  
+			swbreak
+	swend
+
+	mes "Enterキーを押してください"
+	s = ""
+	input s, 64, 1
+
+	gosub *release
+	
+	end
+stop
+
+*release
+	// 解放する
+	if pbm@m != 0 : VirtualFree pbm@m, 49*4, 0x8000/*MEM_RELEASE*/  : pbm@m = 0
+return
+
+*chkPath
+	if mask & 2 {
+		exist path_icon
+		if strsize == -1 {
+			errorno = 41	// アイコンファイルが見つかりません
+			goto *error	
+		}
+	}
+	if mask & 4 {
+		exist path_ver
+		if strsize == -1 {
+			errorno = 42	// バージョンファイルが見つかりません
+			goto *error	
+		}
+	}
+return

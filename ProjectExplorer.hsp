@@ -1,0 +1,881 @@
+
+#ifndef mod_ProjectExplorer
+
+#include "user32.as"
+#include "kernel32.as"
+
+#include "ImageList.as"
+#include "TreeView.as"
+#include "FileSelectDialog.as"
+#include "AutoFileDrop.as"
+
+#include "CodeGenerator.hsp"
+#include "Settings.hsp"
+#include "ProjectCompiler.hsp"
+
+#module mod_ProjectItem\
+	m_isFolder,\
+	m_filePath,\
+	m_itemName,\
+	m_hItem
+	
+	#modinit str _filePath, str _itemName, int _hItem,\
+		local mod_id
+		mref mod_id, 2
+	
+		m_filePath = _filePath
+		m_itemName = _itemName
+		if (m_filePath == "") {
+			m_isFolder = true
+		} else {
+			m_isFolder = false
+		}
+		m_hItem = _hItem
+		
+		return mod_id
+	
+	#modcfunc ProjectItemIsFolder
+		return m_isFolder
+	
+	#modcfunc ProjectItemGetFilePath
+		return m_filePath
+	
+	#modcfunc ProjectItemGetItemName
+		return m_itemName
+	
+	#modfunc ProjectItemSetItemName str _itemName
+		m_itemName = _itemName
+		return
+	
+	#modcfunc ProjectItemGetItem
+		return m_hItem
+
+#global
+
+
+#module mod_ProjectExplorer
+
+	#include "hspda.as"
+
+	#enum IDM_ADDNEWFOLDER = 1
+	#enum IDM_ADDNEWITEM
+	#enum IDM_ADDEXISTINGITEM
+	#enum IDM_OPENFILE
+	#enum IDM_REMOVEITEM
+	#enum IDM_SHOWPROPERTY
+	#enum IDM_RENAMEITEM
+
+	#deffunc ProjectExplorerInit
+		dim m_hParentWnd
+		dim m_wndID
+		dim m_hwnd
+	
+		dimtype m_imageList, 5
+		dimtype m_treeView, 5
+	
+		dim m_hProjectExplorerFolderContextMenu
+		dim m_hProjectExplorerFileContextMenu
+		
+		ProjectExplorerInitProject
+		return
+
+	#deffunc ProjectExplorerCreate\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		m_hParentWnd = hwnd
+		
+		m_wndID = ginfo_newid
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		title "ProjectExplorer"
+		m_hwnd = hwnd
+		SetStyle m_hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+		SetParent m_hwnd, m_hParentWnd
+	
+		newmod m_imageList, mod_ImageList, 16, 16, 0x0018 | 0x0001, 7
+		pos 0, 0 : picload "treeview.gif", 1
+		ImageListAdd m_imageList, 0, 0, 16 * 16, 16, RGB(255, 0, 255)
+		newmod m_treeView, mod_TreeView, WS_EX_CLIENTEDGE, WS_CLIPSIBLINGS | WS_CLIPCHILDREN | TVS_HASBUTTONS | TVS_HASLINES | TVS_EDITLABELS | TVS_SHOWSELALWAYS
+		TreeViewSetImageList m_treeView, ImageListGet(m_imageList)
+	
+		oncmd gosub *OnSetFocus, WM_SETFOCUS
+		oncmd gosub *OnSize, WM_SIZE
+		oncmd gosub *OnNotify, WM_NOTIFY
+		oncmd gosub *OnContextMenu, WM_CONTEXTMENU
+		oncmd gosub *OnCommand, WM_COMMAND
+	
+		gsel selWndID
+		return
+	
+	#deffunc ProjectExplorerSetFolderContextMenu int _hContextMenu
+		m_hProjectExplorerFolderContextMenu = _hContextMenu
+		return
+	
+	#deffunc ProjectExplorerSetFileContextMenu int _hContextMenu
+		m_hProjectExplorerFileContextMenu = _hContextMenu
+		return
+	
+	#deffunc ProjectExplorerInitProject
+		sdim m_projectFilePath, MAX_PATH
+		sdim m_treeData
+		sdim m_projectPropertyDataBase
+	
+		dimtype m_projectItems, 5
+	
+		dim m_hRootItem
+		return
+	
+	*OnSetFocus
+		ProjectExplorer_SetFocus
+		return
+	#deffunc local ProjectExplorer_SetFocus
+		SetFocus TreeViewGetWnd(m_treeView)
+		return
+	
+	*OnSize
+		ProjectExplorer_Resize
+		return
+	#deffunc local ProjectExplorer_Resize\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		TreeViewMove m_treeView, 0, 0, ginfo_winx, ginfo_winy
+	
+		gsel selWndID
+		return
+	
+	*OnNotify
+		return ProjectExplorer_Notify()
+	#defcfunc local ProjectExplorer_Notify\
+		local selWndID,\
+		local ret,\
+		local nmhdr,\
+		local nmtvkeydown,\
+		local nmtvdispinfo,\
+		local hItem,\
+		local id,\
+		local szText
+		dim nmhdr, 3
+		dim nmtvkeydown, 5
+		dim nmtvdispinfo, 13
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		ret = 0
+	
+		dupptr nmhdr, lparam, 12
+		switch (nmhdr(0))
+		case TreeViewGetWnd(m_treeView)
+#if 0
+			if (nmhdr(2) = 0xFFFFFE6E/*TVN_SELCHANGED*/) {
+				hItem = TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+				if (hItem != null) {
+					if (hItem == m_hRootItem) {
+						PropertyGridSetSelectedFilePath m_projectFilePath
+						PropertyGridSetData m_projectPropertyDataBase
+					} else {
+						PropertyGridClear
+					}
+				}
+			}
+#endif
+			if (nmhdr(2) == NM_DBLCLK) {
+				hItem = TreeViewHitTest(m_treeView, ginfo_mx, ginfo_my)
+				if (hItem != null) {
+					id = TreeViewGetParam(m_treeView, hItem)
+					if (ProjectItemGetFilePath(m_projectItems(id)) != "") {
+						ProjectExplorerOpenFile TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+					}
+				}
+			}
+			if (nmhdr(2) == -412/*TVN_KEYDOWN*/) {
+				hItem = TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+				if (hItem == null) {
+					swbreak
+				}
+				id = TreeViewGetParam(m_treeView, hItem)
+				dupptr nmtvkeydown, lparam, 20, 4
+				switch (LOWORD(nmtvkeydown(3)))
+				case 13
+					if (ProjectItemGetFilePath(m_projectItems(id)) != "") {
+						ProjectExplorerOpenFile TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+					}
+					swbreak
+				case 113
+					ProjectExplorerRenameItem TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+					swbreak
+				swend
+			}
+			if (nmhdr(2) == -410/*TVN_BEGINLABELEDIT*/) {
+				dupptr nmtvdispinfo, lparam, 52, 4
+				if (nmtvdispinfo(4) == m_hRootItem) {
+					ret = 1
+				} else {
+					id = TreeViewGetParam(m_treeView, nmtvdispinfo(4))
+					if (ProjectItemGetFilePath(m_projectItems(id)) == "") {
+						ret = 0
+						goto *@f
+					} else {
+						ret = 1
+						goto *@f
+					}
+				}
+			}
+			if (nmhdr(2) == -411/*TVN_ENDLABELEDIT*/) {
+				dupptr nmtvdispinfo, lparam, 52, 4
+				id = TreeViewGetParam(m_treeView, nmtvdispinfo(4))
+				if (nmtvdispinfo(7) != null) {
+					dupptr szText, nmtvdispinfo(7), 1, 2
+					ProjectItemSetItemName m_projectItems(id), szText
+				}
+				TreeViewSetItem m_treeView, nmtvdispinfo(4), ProjectItemGetItemName(m_projectItems(id)), id
+				TreeViewSortChildren m_treeView, TreeViewGetNextItem(m_treeView, TVGN_PARENT, nmtvdispinfo(4))
+	
+				ProjectExplorerSaveProject
+			}
+			swbreak
+		swend
+	
+	*@
+		gsel selWndID
+		return ret
+	
+	*OnContextMenu
+		ProjectExplorer_ContextMenu
+		return
+	#deffunc local ProjectExplorer_ContextMenu\
+		local selWndID,\
+		local hItem,\
+		local id,\
+		local point
+		dim point, 4
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		hItem = TreeViewHitTest(m_treeView, ginfo_mx, ginfo_my)
+		if (hItem != null) {
+			id = TreeViewGetParam(m_treeView, hItem)
+			TreeViewSelectItem m_treeView, hItem
+			
+			if (ProjectItemGetFilePath(m_projectItems(id)) == "") {
+				TrackPopupMenu m_hProjectExplorerFolderContextMenu, 0, ginfo_mx, ginfo_my, 0, hwnd, 0
+			} else {
+				TrackPopupMenu m_hProjectExplorerFileContextMenu, 0, ginfo_mx, ginfo_my, 0, hwnd, 0
+			}
+		}
+	
+		gsel selWndID
+		return
+	
+	*OnCommand
+		ProjectExplorer_Command
+		return
+	#deffunc local ProjectExplorer_Command\
+		local selWndID,\
+		local hParentItem,\
+		local hItem,\
+		local id,\
+		local filePath,\
+		local curdir,\
+		local buf
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		if (m_projectFilePath == "") {
+			return
+		}
+	
+		sendmsg m_hParentWnd, WM_COMMAND, wparam, lparam
+	
+		gsel selWndID
+		return
+	
+	#defcfunc ProjectExplorerGetHWnd
+		return m_hwnd
+	
+	#deffunc ProjectExplorerNewProject str _projectName,\
+		local curdir,\
+		local temp
+		
+		curdir = dir_cur
+		chdir SettingsGetProjectSavePath()
+	
+		sdim fileList
+		dirlist fileList, _projectName, 5
+		if (stat == 0) {
+			mkdir _projectName
+		}
+	
+		chdir SettingsGetProjectSavePath() + "\\" + _projectName
+	
+		sdim temp
+		notesel temp
+		notesave "Program.hsp"
+		noteunsel
+		
+		m_treeData = ""
+		m_treeData += "\\" + _projectName + "\n"
+		m_treeData += " \\ソースファイル\n"
+		m_treeData += " ?" + dir_cur + "\\Program.hsp\n"
+		m_treeData += " \\ヘッダファイル\n"
+		m_treeData += " \\リソースファイル\n"
+	
+		m_projectPropertyDataBase = ""
+		m_projectPropertyDataBase += "IconFilename	\n"
+		m_projectPropertyDataBase += "LanguageID	$411\n"
+		m_projectPropertyDataBase += "_FILEVERSION	1.0.0.0\n"
+		m_projectPropertyDataBase += "_PRODUCTVERSION	1.0.0.0\n"
+		m_projectPropertyDataBase += "Comments	\n"
+		m_projectPropertyDataBase += "CompanyName	\n"
+		m_projectPropertyDataBase += "FileDescription	\n"
+		m_projectPropertyDataBase += "FileVersion	1.00\n"
+		m_projectPropertyDataBase += "InternalName	" + _projectName + "\n"
+		m_projectPropertyDataBase += "LegalCopyright	\n"
+		m_projectPropertyDataBase += "OriginalFilename	" + _projectName + ".exe\n"
+		m_projectPropertyDataBase += "ProductName	" + _projectName + "\n"
+		m_projectPropertyDataBase += "ProductVersion	1.00\n"
+
+		vsave_start
+		vsave_put m_treeData
+		vsave_put m_projectPropertyDataBase
+		vsave_end _projectName + ".hsproj"
+	
+		ProjectExplorerOpenProject _projectName + ".hsproj"
+		chdir curdir
+		return
+	
+	#deffunc ProjectExplorerOpenProject str _filePath,\
+		local lineData,\
+		local index,\
+		local level,\
+		local c,\
+		local itemName,\
+		local hParentItem,\
+		local hItem
+		
+		ProjectExplorerCloseProject
+	
+		if (exist(_filePath) == -1) {
+			dialog _filePath + " が見つかりません。", 1, ProductName
+			return
+		}
+	
+		GetFullPathName _filePath, 0, varptr(m_projectFilePath), null
+		memexpand m_projectFilePath, stat
+		GetFullPathName _filePath, stat, varptr(m_projectFilePath), null
+	
+		vload_start _filePath
+		if (stat != 0) {
+			ProjectExplorerCloseProject
+			dialog _filePath + " の読み込みに失敗しました。", 1, ProductName
+			return
+		}
+		vload_get m_treeData
+		if (stat != 0) {
+			ProjectExplorerCloseProject
+			dialog _filePath + " の読み込みに失敗しました。", 1, ProductName
+			return
+		}
+		vload_get m_projectPropertyDataBase
+		if (stat != 0) {
+			ProjectExplorerCloseProject
+			dialog _filePath + " の読み込みに失敗しました。", 1, ProductName
+			return
+		}
+		vload_end
+	
+		notesel m_treeData
+	
+		index = 0
+		level = 0
+		hParentItem(level) = null
+		repeat notemax
+			getstr lineData, m_treeData, index
+			index += strsize
+			
+			repeat strlen(lineData)
+				itemName = strmid(lineData, level + 1, strlen(lineData) - (level + 1))
+				c = peek(lineData, level)
+				if (c != ' ') {
+					switch (c)
+					case '\\'
+						hParentItem(level + 1) = ProjectExplorerAddFolder(hParentItem(level), itemName)
+						swbreak
+					case '?'
+						hItem = ProjectExplorerAddFile(hParentItem(level + 1), itemName)
+						swbreak
+					swend
+					break
+				}
+				level++
+			loop
+		loop
+		noteunsel
+		m_hRootItem = TreeViewGetNextItem(m_treeView, TVGN_ROOT, null)
+		TreeViewSelectItem m_treeView, m_hRootItem
+		return
+	
+	#defcfunc ProjectExplorerGetProjectFilePath
+		return m_projectFilePath
+	
+	#deffunc ProjectExplorerSetProjectProperty
+		m_projectPropertyDataBase = PropertyGridGetData()
+		return
+	
+	#deffunc ProjectExplorerSaveProject\
+		local hItem,\
+		local level,\
+		local hParentItem,\
+		local id
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+		
+		m_treeData = ""
+	
+		level = 0
+		hParentItem(level) = m_hRootItem
+		repeat
+			id = TreeViewGetParam(m_treeView, hParentItem(level))
+			if (ProjectItemGetFilePath(m_projectItems(id)) == "") {
+				repeat level
+					m_treeData += " "
+				loop
+				m_treeData += "\\" + ProjectItemGetItemName(m_projectItems(id)) + "\n"
+			} else {
+				repeat level - 1
+					m_treeData += " "
+				loop
+				m_treeData += "?" + ProjectItemGetItemName(m_projectItems(id)) + "\n"
+			}
+			hItem = TreeViewGetNextItem(m_treeView, TVGN_CHILD, hParentItem(level))
+			if (hItem == null) {
+				repeat
+					hItem = TreeViewGetNextItem(m_treeView, TVGN_NEXT, hParentItem(level))
+					if (hItem == null) {
+						level--
+						if (level < 0) {
+							break
+						}
+					} else {
+						hParentItem(level) = hItem
+						break
+					}
+				loop
+			} else {
+				level++
+				hParentItem(level) = hItem
+			}
+			if (level < 0) {
+				break
+			}
+		loop
+		
+		vsave_start
+		vsave_put m_treeData
+		vsave_put m_projectPropertyDataBase
+		vsave_end m_projectFilePath
+		return
+	
+	#deffunc ProjectExplorerCloseProject
+		foreach m_projectItems
+			delmod m_projectItems(cnt)
+		loop
+		ProjectExplorerRemoveItem m_hRootItem
+		
+		ProjectExplorerInitProject
+		return
+	
+	#defcfunc ProjectExplorerGetProperty
+		return m_projectPropertyDataBase
+	
+	#deffunc ProjectExplorerSetProperty str _dataBase
+		m_projectPropertyDataBase = _dataBase
+		return
+	
+	#defcfunc ProjectExplorerAddFolder int _hParentItem, str _itemName,\
+		local hParentItem,\
+		local itemName,\
+		local id,\
+		local hItem
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		newmod m_projectItems, mod_ProjectItem, "", _itemName : id = stat
+		hItem = TreeViewInsertItem(m_treeView, _hParentItem, TVI_SORT, 0, _itemName, id)
+		TreeViewExpand m_treeView, _hParentItem, 2
+		return hItem
+	
+	#defcfunc ProjectExplorerAddFile int _hParentItem, str _filePath,\
+		local hParentItem,\
+		local itemName,\
+		local id,\
+		local hItem
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		itemName = getpath(_filePath, 8)
+		newmod m_projectItems, mod_ProjectItem, _filePath, itemName : id = stat
+		hItem = TreeViewInsertItem(m_treeView, _hParentItem, TVI_SORT, getImageIndex(_filePath), itemName, id)
+		TreeViewExpand m_treeView, _hParentItem, 2
+		return hItem
+	
+	#deffunc ProjectExplorerCompile\
+		local curdir,\
+		local ret
+		
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		ProjectCompilerCompile "Program.hsp", SettingsIsDebugWindow() : ret = stat
+	
+		chdir curdir
+		return ret
+	
+	#deffunc ProjectExplorerRun\
+		local curdir,\
+		local ret
+		
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		ProjectCompilerRun : ret = stat
+	
+		chdir curdir
+		return ret
+		
+	#deffunc ProjectExplorerMakeExe\
+		local curdir,\
+		local ret
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		ProjectCompilerMakeExe "Program.hsp", m_projectPropertyDataBase : ret = stat
+	
+		chdir curdir
+		return ret
+	
+#if 0
+	
+	#deffunc ProjectExplorerCompileRun var _compileInfo,\
+		local curdir,\
+		local scriptFilePath, local objectFilePath,\
+		local ret,\
+		local runtimeName,\
+		local debugMode,\
+		local cmdline
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		scriptFilePath = "Program.hsp"
+		objectFilePath = "obj"
+	
+		hsc_ini scriptFilePath
+		hsc_objname objectFilePath
+		hsc_compath SettingsGetHSPInstallPath() + "\\common\\"
+		hsc_comp 1, 0, 0
+		ret = stat
+		if (ret != 0) {
+			hsc_getmes _compileInfo
+			return false
+		}
+	
+		hsc3_getruntime runtimeName, objectFilePath
+		if (runtimeName == "") {
+			runtimeName = "hsp3.exe"
+		}
+		debugMode = 0
+	
+		cmdline = "\"" + SettingsGetHSPInstallPath() + "\\" + runtimeName + "\" " + objectFilePath
+		hsc3_run cmdline, debugMode
+	
+		hsc_getmes _compileInfo
+	
+		chdir curdir
+		return true
+	
+	#deffunc ProjectExplorerMakeExe var _compileInfo,\
+		local curdir,\
+		local scriptFilePath, local exeFilePath, local objectFilePath, local packFileFilePath,\
+		local ret,\
+		local runtimeName,\
+		local debugMode,\
+		local cmdline,\
+		local name, local value, local version
+	
+		if (m_projectFilePath == "") {
+			//dialog "プロジェクトを開いてください。", 1, ProductName
+			return
+		}
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		scriptFilePath = "Program.hsp"
+		exeFilePath = getpath(m_projectFilePath, 1 | 8) + ".exe"
+		objectFilePath = "start.ax"
+		packFileFilePath = "packfile"
+	
+		hsc_ini scriptFilePath
+		hsc_objname objectFilePath
+		hsc_compath SettingsGetHSPInstallPath() + "\\common\\"
+		hsc_comp 0, 4, 0
+		/*エラー処理*/
+		hsc3_make SettingsGetHSPInstallPath() + "\\runtime"
+		/*エラー処理*/
+	
+		hsc_getmes _compileInfo
+		
+		chdir curdir
+		return
+	
+#endif
+	
+	#defcfunc ProjectExplorerGetSelectedItem
+		return TreeViewGetNextItem(m_treeView, TVGN_CARET, null)
+	
+	#defcfunc ProjectExplorerGetRootItem
+		return m_hRootItem
+	
+	#deffunc ProjectExplorerRemoveItem int _hItem,\
+		local hParentItem,\
+		local hChildItem,\
+		local hNextItem,\
+		local id
+	
+		hParentItem = _hItem
+		repeat
+			hChildItem = TreeViewGetNextItem(m_treeView, TVGN_CHILD, hParentItem)
+			if (hChildItem == null) {
+				hNextItem = TreeViewGetNextItem(m_treeView, TVGN_NEXT, hParentItem)
+				if (hNextItem == null) {
+					hNextItem = TreeViewGetNextItem(m_treeView, TVGN_PARENT, hParentItem)
+				}
+				id = TreeViewGetParam(m_treeView, hParentItem)
+				delmod m_projectItems(id)
+				TreeViewDeleteItem m_treeView, hParentItem
+				if (hParentItem == _hItem) {
+					break
+				}
+				hParentItem = hNextItem
+			} else {
+				hParentItem = hChildItem
+			}
+		loop
+		SetFocus TreeViewGetWnd(m_treeView)
+	
+		if (_hItem != m_hRootItem) {
+			ProjectExplorerSaveProject
+		}
+		return
+	
+	#deffunc ProjectExplorerAddNewFolder int _hParentItem,\
+		local hItem
+		
+		hItem = ProjectExplorerAddFolder(_hParentItem, "新しいフォルダー")
+		TreeViewSelectItem m_treeView, hItem
+		TreeViewEditLabel m_treeView, hItem
+		return
+	
+	#deffunc ProjectExplorerAddNewItem int _hParentItem,\
+		local curdir,\
+		local filePath,\
+		local temp,\
+		local hItem
+				
+		curdir = dir_cur
+		FileSelectDialogCreate 1, getpath(m_projectFilePath, 32), "新しい項目", "", {"ソースファイル (*.hsp)|*.hsp|
+ヘッダファイル (*.as)|*.as|
+Windows フォーム (*.hgs)|*.hgs|"}, 0
+		if (stat != 0) {
+			filePath = refstr
+	
+			notesel temp
+			notesave filePath
+			noteunsel
+			
+			hItem = ProjectExplorerAddFile(_hParentItem, filePath)
+			TreeViewSelectItem m_treeView, hItem
+		}
+		chdir curdir
+	
+		ProjectExplorerSaveProject
+		return
+	
+	#deffunc ProjectExplorerAddExistingItem int _hParentItem,\
+		local curdir,\
+		local filePath,\
+		local hItem
+			
+		curdir = dir_cur
+		FileSelectDialogCreate 0, getpath(m_projectFilePath, 32), "既存の項目", "", {"ソースファイル (*.hsp)|*.hsp|
+ヘッダファイル (*.as)|*.as|
+Windows フォーム (*.hgs)|*.hgs|"}, 0
+		if (stat != 0) {
+			filePath = refstr
+			hItem = ProjectExplorerAddFile(_hParentItem, filePath)
+			TreeViewSelectItem m_treeView, hItem
+		}
+		chdir curdir
+	
+		ProjectExplorerSaveProject
+		return
+	
+	#deffunc ProjectExplorerOpenFile int _hItem,\
+		local id, local filePath,\
+		local curdir
+		
+		if (_hItem == null) {
+			return
+		}
+		id = TreeViewGetParam(m_treeView, _hItem)
+		filePath = ProjectItemGetFilePath(m_projectItems(id))
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+	
+		GetFullPathName filePath, 0, varptr(filePath), null
+		memexpand filePath, stat
+		GetFullPathName filePath, stat, varptr(filePath), null
+		autodrop m_hParentWnd, filePath, 0, 0, 0
+	
+		chdir curdir
+		return
+	
+	#deffunc ProjectExplorerShowProperty int _hItem,\
+		local id, local filePath,\
+		local curdir
+		
+		if (_hItem == null) {
+			return
+		}
+		id = TreeViewGetParam(m_treeView, _hItem)
+		filePath = ProjectItemGetFilePath(m_projectItems(id))
+	
+		curdir = dir_cur
+		chdir getpath(m_projectFilePath, 32)
+		if (exist(filePath) == -1) {
+			dialog filePath + " が見つかりません。", 1, ProductName
+		} else {
+			exec filePath, 16, "properties"
+		}
+		chdir curdir
+		return
+	
+	#deffunc ProjectExplorerRenameItem int _hItem
+		sendmsg TreeViewGetWnd(m_treeView), TVM_EDITLABEL, 0, _hItem
+		return
+	
+	#defcfunc local getImageIndex str _filePath,\
+		local imageIndex
+	
+		switch (getpath(_filePath, 16 | 8 | 2))
+			case ".hsp"
+				imageIndex = 2
+				swbreak
+			case ".as"
+				imageIndex = 3
+				swbreak
+			case ".hgs"
+				imageIndex = 4
+				swbreak
+			default
+				imageIndex = 15
+				swbreak
+		swend
+		return imageIndex
+	
+	#defcfunc local getParentItem int _hItem,\
+		local hParentItem,\
+		local id
+	
+		if (_hItem == null) {
+			hParentItem = m_hRootItem
+		} else {
+			hParentItem = _hItem
+		}
+		id = TreeViewGetParam(m_treeView, hParentItem)
+		if (ProjectItemGetFilePath(m_projectItems(id)) != "") {
+			hParentItem = TreeViewGetNextItem(m_treeView, TVGN_PARENT, hParentItem)
+		}
+		return hParentItem
+
+#global
+
+	ProjectExplorerInit
+	
+#if 0
+
+#include "user32.as"
+
+	screen 0
+	
+	ProjectExplorerCreate
+	MoveWindow ProjectExplorerGetHWnd(), 0, 0, ginfo_winx, ginfo_winy, true
+	ShowWindow ProjectExplorerGetHWnd(), SW_SHOW
+	ProjectExplorerOpenProject dir_cur + "\\HSPProjects\\Project1\\Project1.hsproj"
+	
+	gsel 0
+	oncmd gosub *OnDropFiles, WM_DROPFILES
+	stop
+	
+*OnDropFiles
+	selWndID = ginfo_sel
+	gsel ginfo_intid
+	
+	hDrop = wparam
+	
+	dim point, 2
+	DragQueryPoint hDrop, varptr(point)
+	
+	fileCount = DragQueryFile(hDrop, -1, 0, 0)
+	
+	sdim filePath, MAX_PATH
+	repeat fileCount
+		DragQueryFile hDrop, cnt, varptr(filePath), MAX_PATH
+		dialog filePath
+	loop
+	
+	DragFinish hDrop
+	
+	gsel selWndID
+	return
+
+#endif
+
+#endif

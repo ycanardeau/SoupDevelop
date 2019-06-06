@@ -1,0 +1,68 @@
+
+#ifndef mod_SearchDialog
+
+#include "user32.as"
+
+#module mod_SearchDialog
+
+	#deffunc SearchDialogInit
+		dim m_hParentWnd
+		dim m_wndID
+		dim m_hwnd
+	
+		sdim m_searchString
+		dim m_hSearchTextBox
+		dim m_hSeachButton
+		return
+
+	#deffunc SearchDialogCreate\
+		local selWndID
+	
+		m_hParentWnd = hwnd
+		m_wndID = ginfo_newid
+		
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		title "SearchDialog"
+		m_hwnd = hwnd
+		SetStyle m_hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+		SetParent m_hwnd, m_hParentWnd
+		syscolor 15 : boxf
+	
+		input m_searchString
+		m_hSearchTextBox = objinfo_hwnd(stat)
+	
+		button gosub "åüçı", *SearchButton_Clicked
+		m_hSeachButton = objinfo_hwnd(stat)
+	
+		oncmd gosub *OnSize, WM_SIZE
+	
+		gsel selWndID
+		return
+	
+	#defcfunc SearchDialogGetHWnd
+		return m_hwnd
+	
+	*OnSize
+		SearchDialog_Size
+		return
+	#deffunc local SearchDialog_Size\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		MoveWindow m_hSearchTextBox, 8, ginfo_winy - 20 - 8, ginfo_winx - 73 - 8 - 8 * 2, 20, true
+		MoveWindow m_hSeachButton, ginfo_winx - 73 - 8, ginfo_winy - 20 - 8, 73, 20, true
+	
+		gsel selWndID
+		return
+	
+	*SearchButton_Clicked
+		dialog "åüçı"
+		return
+
+#global
+
+	SearchDialogInit
+
+#endif

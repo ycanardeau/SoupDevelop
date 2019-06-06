@@ -1,0 +1,97 @@
+
+#ifndef mod_ItemCollectionEditor
+
+#include "user32.as"
+
+#module mod_ItemCollectionEditor
+
+#deffunc ItemCollectionEditorInit
+	dim m_parentWndID
+	dim m_hParentWnd
+
+	dim ItemCollectionEditor
+	
+	dim m_stat
+	dim m_refstr
+	mref m_stat, 64
+	mref m_refstr, 65
+	return
+
+#deffunc ItemCollectionEditorCreate\
+	local selWndID
+
+	selWndID = ginfo_sel
+	m_parentWndID = selWndID
+	m_hParentWnd = hwnd
+
+#include "ItemCollectionEditor.hgs.hsp"
+	
+	oncmd *cancelButton_Clicked, WM_CLOSE
+
+	gsel selWndID
+	return
+
+*OnClose
+	ItemCollectionEditorHide
+	return 0
+
+#deffunc ItemCollectionEditorShow str _itemCollection,\
+	local rect
+	
+	itemCollectionTextBox = _itemCollection
+	sendmsg hitemCollectionTextBox, WM_SETTEXT, 0, varptr(itemCollectionTextBox)
+
+	dim rect, 4
+
+	m_hSelectedFocus = GetFocus()
+
+	SetFocus m_hParentWnd
+	gsel m_parentWndID
+
+	GetWindowRect m_hParentWnd, varptr(rect)
+	rect(2) -= rect(0) : rect(3) -= rect(1)
+
+	EnableWindow m_hParentWnd, 0
+
+	gsel ItemCollectionEditor
+	width , , rect(0) + (rect(2) - ginfo_sizex) / 2, rect(1) + (rect(3) - ginfo_sizey) / 2
+	gsel ItemCollectionEditor, 1
+
+	SetFocus hitemCollectionTextBox
+	
+	stop
+*dialogEnd
+	return
+
+#deffunc ItemCollectionEditorHide
+	gsel m_parentWndID, 1
+	gsel ItemCollectionEditor, -1
+	EnableWindow m_hParentWnd, 1
+	gsel m_parentWndID, 1
+	SetFocus m_hSelectedFocus
+	return
+	
+*OKButton_Clicked
+	ItemCollectionEditorHide
+	m_stat = 1
+	m_refstr = itemCollectionTextBox
+	goto *dialogEnd
+
+*cancelButton_Clicked
+	ItemCollectionEditorHide
+	m_stat = 0
+	m_refstr = ""
+	goto *dialogEnd
+
+#global
+
+	ItemCollectionEditorInit
+
+#if 0
+
+	ItemCollectionEditorCreate
+	ItemCollectionEditorShow
+
+#endif
+
+#endif

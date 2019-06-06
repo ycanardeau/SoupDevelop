@@ -1,0 +1,258 @@
+
+#ifndef mod_ObjectList
+	
+#include "kernel32.as"
+	
+#include "TSVDataBase.as"
+	
+#module mod_OLDataBase\
+	m_parentId,\
+	m_type,\
+	m_data
+	
+	#modinit int _parentId, str _type,\
+		local thisId
+		mref thisId, 2
+		m_parentId = _parentId
+		m_type = _type
+		sdim m_data
+		return thisId
+	
+	#modfunc ObjectListDataBaseInsertData str _data
+		TSVDataBaseSetData m_data, TSVDataBaseGetRows(m_data), _data
+		return
+	
+	#modcfunc ObjectListDataBaseGetParentId
+		return m_parentId
+	
+	#modfunc ObjectListDataBaseSetParentId int _parentId
+		m_parentId = _parentId
+		return
+	
+	#modcfunc ObjectListDataBaseGetType
+		return m_type
+	
+	#modfunc ObjectListDataBaseSetType str _type
+		m_type = _type
+		return
+	
+	#modcfunc ObjectListDataBaseGetData
+		return m_data
+	
+	#modfunc ObjectListDataBaseSetData str _data
+		m_data = _data
+		return
+	
+	#modcfunc ObjectListDataBaseGetValueByName str _name,\
+		local ret,\
+		local lineData,\
+		local name, local value,\
+		local index
+		sdim ret
+		sdim name
+		sdim value
+	
+		index = 0
+		sdim lineData
+		repeat TSVDataBaseGetRows(m_data)
+			lineData = TSVDataBaseGetData(m_data, cnt)
+			getstr name, lineData, 0, '\t'
+			getstr value, lineData, strsize, 0
+			if (_name == name) {
+				ret = value
+				break
+			}
+		loop
+		return ret
+	
+	#modfunc ObjectListDataBaseSetValueByName str _name, str _value,\
+		local ret,\
+		local lineData,\
+		local name, local value,\
+		local index
+		sdim ret
+		sdim name
+		sdim value
+	
+		index = 0
+		sdim lineData
+		repeat TSVDataBaseGetRows(m_data)
+			lineData = TSVDataBaseGetData(m_data, cnt)
+			getstr name, lineData, 0, '\t'
+			getstr value, lineData, strsize, 0
+			if (_name == name) {
+				TSVDataBaseSetData m_data, cnt, _name + "\t" + _value
+				break
+			}
+		loop
+		return
+	
+	#modfunc ObjectListDataBaseSet str _data
+		TSVDataBaseSet m_data, _data
+		return
+	
+	#modcfunc ObjectListDataBaseGet
+		return TSVDataBaseGet(m_data)
+	
+#global
+	
+	
+#module mod_ObjectList\
+	m_objectListDataBase,\
+	m_nObjects,\
+	m_moduleIDList
+	
+	#include "hspda.as"
+	
+	#modinit\
+		local thisId
+		mref thisId, 2
+		
+		dimtype m_objectListDataBase, 5
+		m_nObjects = 0
+		
+		dim m_moduleIDList
+		return thisId
+	
+	// オブジェクトを1つ挿入する．
+	// _index	挿入するインデックスをしていする．-1を指定すると，一番最後に追加する．
+	#modfunc ObjectListInsert int _index, int _parentId, str _type,\
+		local id
+	
+		newmod m_objectListDataBase, mod_OLDataBase, _parentId, _type : id = stat
+		if (_index < 0) {
+			m_moduleIDList(m_nObjects) = id
+		} else {
+			repeat m_nObjects - _index
+				m_moduleIDList(m_nObjects - cnt) = m_moduleIDList(m_nObjects - cnt - 1)
+			loop
+			m_moduleIDList(_index) = id
+		}
+		m_nObjects++
+		return id
+	
+	#modcfunc ObjectListGetCount
+		return m_nObjects
+	
+	#modfunc ObjectListInsertData int _parentID, str _data
+		ObjectListDataBaseInsertData m_objectListDataBase(_parentID), _data
+		return
+	
+	
+	// 指定されたインデックスが使用されているかどうかを取得する．
+	#modcfunc ObjectListIsUse int _index,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return 0
+		}
+		return varuse(m_objectListDataBase(moduleID))
+	
+	// オブジェクトの種類を取得する．
+	#modcfunc ObjectListGetType int _index,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return ""
+		}
+		return ObjectListDataBaseGetType(m_objectListDataBase(moduleID))
+	
+	#modcfunc ObjectListGetValueByName int _index, str _name,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return ""
+		}
+		return ObjectListDataBaseGetValueByName(m_objectListDataBase(moduleID), _name)
+	
+	#modfunc ObjectListSetValueByName int _index, str _name, str _value,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return ""
+		}
+		ObjectListDataBaseSetValueByName m_objectListDataBase(moduleID), _name, _value
+		return
+		
+	// オブジェクトのデータベースを取得する．
+	#modcfunc ObjectListGet int _index,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return ""
+		}
+		return ObjectListDataBaseGet(m_objectListDataBase(moduleID))
+	
+	
+	// オブジェクトのデータベースを設定する．
+	#modfunc ObjectListSet int _index, str _data,\
+		local moduleID
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return
+		}
+		ObjectListDataBaseSet m_objectListDataBase(moduleID), _data
+		return
+	
+	// オブジェクトを一つ削除する．
+	#modfunc ObjectListDelete int _index,\
+		local moduleID
+	
+		if (_index < 0 || _index > m_nObjects) {
+			return
+		}
+		
+		moduleID = ObjectListGetModuleID(thismod, _index)
+		if (moduleID == -1) {
+			return
+		}
+		delmod m_objectListDataBase(moduleID)
+		repeat m_nObjects - 1
+			if (cnt >= _index) {
+				m_moduleIDList(cnt) = m_moduleIDList(cnt + 1)
+			}
+		loop
+		m_nObjects--
+		m_moduleIDList(m_nObjects) = -1
+		return
+	
+	// インデックスから使用されているモジュールIDを取得する．
+	#modcfunc ObjectListGetModuleID int _index
+		return m_moduleIDList(_index)
+	
+	#modfunc ObjectListCopyAll var _source,\
+		local moduleID
+		
+		m_nObjects = ObjectListGetCount(_source)
+		repeat m_nObjects
+			newmod m_objectListDataBase, mod_OLDataBase, -1, "" : moduleID = stat
+			ObjectListCopy thismod, _source, moduleID, cnt
+			m_moduleIDList(cnt) = moduleID
+		loop
+		return
+	
+	// オブジェクトをコピーする．
+	// _source	コピー元のモジュール変数．
+	// _moduleID	コピー先のモジュールID．
+	// _index	コピー元のインデックス．
+	#modfunc ObjectListCopy var _source, int _moduleID, int _index
+		ObjectListDataBaseSetParentId m_objectListDataBase(_moduleID), getObjectListDataBaseParentId(_source, ObjectListGetModuleID(_source, _index))
+		ObjectListDataBaseSetType m_objectListDataBase(_moduleID), getObjectListDataBaseType(_source, ObjectListGetModuleID(_source, _index))
+		ObjectListDataBaseSetData m_objectListDataBase(_moduleID), getObjectListDataBaseData(_source, ObjectListGetModuleID(_source, _index))
+		return
+	
+	#modcfunc local isUseObjectListDataBase int _moduleID
+		return varuse(m_objectListDataBase(_moduleID))
+	
+	#modcfunc local getObjectListDataBaseParentId int _moduleID
+		return ObjectListDataBaseGetParentId(m_objectListDataBase(_moduleID))
+	
+	#modcfunc local getObjectListDataBaseType int _moduleID
+		return ObjectListDataBaseGetType(m_objectListDataBase(_moduleID))
+	
+	#modcfunc local getObjectListDataBaseData int _moduleID
+		return ObjectListDataBaseGetData(m_objectListDataBase(_moduleID))
+	
+#global
+	
+#endif

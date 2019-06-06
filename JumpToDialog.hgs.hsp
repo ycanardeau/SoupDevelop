@@ -1,0 +1,53 @@
+
+#include "user32.as"
+
+	// JumpToDialog
+	JumpToDialog = ginfo_newid
+	screen JumpToDialog, 230, 65, screen_fixedsize | screen_hide
+	title "カーソル移動"
+	hJumpToDialog = hwnd
+	SetWindowLong hwnd, GWL_HWNDPARENT, m_hParentWnd
+	/*SetWindowLong hwnd, -16, $06c80000
+	SetWindowLong hwnd, -20, $00050000*/
+	SetStyle hwnd, GWL_STYLE, 0, WS_MINIMIZEBOX
+	syscolor 15
+	boxf
+	
+	// label1
+	font "MS UI Gothic", 12, 0
+	syscolor 18
+	pos 28, 37
+	mes "移動先の行番号"
+
+	// jumpNumber
+	pos 12, 12
+	objsize 100, 18
+	sdim jumpLineNumber, 32767
+	jumpLineNumber = ""
+	input jumpLineNumber, , , 32767
+	hjumpLineNumber = objinfo_hwnd(stat)
+
+	/*// OKButton
+	pos 134, 10
+	objsize 81, 21
+	button gosub "OK", *OKButton_Clicked
+	hOKButton = objinfo_hwnd(stat)
+
+	// cancelButton
+	pos 134, 34
+	objsize 81, 21
+	button gosub "キャンセル", *cancelButton_Clicked
+	hcancelButton = objinfo_hwnd(stat)*/
+	
+	// OKButton
+	pos 134, 10
+	objsize 81, 21
+	button "OK", *OKButton_Clicked
+	hOKButton = objinfo_hwnd(stat)
+	sendmsg hOKButton, BM_SETSTYLE, BS_DEFPUSHBUTTON, true
+
+	// cancelButton
+	pos 134, 34
+	objsize 81, 21
+	button "キャンセル", *cancelButton_Clicked
+	hcancelButton = objinfo_hwnd(stat)

@@ -1,0 +1,177 @@
+
+#ifndef mod_LabelList
+
+#include "ListView.as"
+
+#include "MCDeflist.as"
+
+#module mod_LabelList
+
+	#deffunc LabelListInit
+		dim m_hParentWnd
+		dim m_wndID
+		dim m_hwnd
+	
+		dimtype m_listView, 5
+		
+		dim m_jumpLineNumber
+	
+		dimtype deflist, 5
+		dim  iDL					// Index of Active Definition List
+		
+		dim  deflistLn				// 定義がある行番号
+		sdim deflistIdent			// 定義される識別子
+		dim  deflistType			// 定義される種類
+		sdim deflistScope			// 定義されるスコープ
+		dim  deflistCount			// 定義の数
+		dim  deflistItemTop			// 定義の項目番号の先頭
+		sdim stype
+		return
+	
+	#deffunc LabelListCreate\
+		local selWndID
+		
+		selWndID = ginfo_sel
+		m_hParentWnd = hwnd
+		
+		m_wndID = ginfo_newid
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		title "ProjectExplorer"
+		m_hwnd = hwnd
+		SetStyle hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+		SetParent hwnd, m_hParentWnd
+	
+		newmod m_listView, mod_ListView, WS_EX_CLIENTEDGE, LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER//0x0001 | 0x0004 | 0x0008 | 0x8000
+		ListViewSetExtendedListViewStyle m_listView, 0x0001 | 0x0020
+		ListViewInsertColumn m_listView, 0, LVCFMT_LEFT, 32, "行"
+		ListViewInsertColumn m_listView, 1, LVCFMT_LEFT, 192, "識別子"
+		ListViewInsertColumn m_listView, 2, LVCFMT_LEFT, 64, "種類"
+		ListViewInsertColumn m_listView, 3, LVCFMT_LEFT, 128, "範囲"
+	
+		oncmd gosub *OnSetFocus, WM_SETFOCUS
+		oncmd gosub *OnSize, WM_SIZE
+		oncmd gosub *OnNotify, WM_NOTIFY
+	
+		gsel selWndID
+		return
+	
+	#defcfunc LabelListGetWnd
+		return m_hwnd
+	
+	#defcfunc LabelListGetListViewWnd
+		return ListViewGetWnd(m_listView)
+	
+	#defcfunc LabelListGetJumpLineNumber
+		return m_jumpLineNumber
+	
+	*OnSetFocus
+		ListView_SetFocus
+		return
+	#deffunc local ListView_SetFocus
+		SetFocus ListViewGetWnd(m_listView)
+		return
+	
+	*OnSize
+		LabelList_Resize
+		return
+	#deffunc local LabelList_Resize\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		ListViewMove m_listView, 0, 0, ginfo_winx, ginfo_winy
+	
+		gsel selWndID
+		return
+	
+	*OnNotify
+		LabelList_Notify
+		return
+	#deffunc local LabelList_Notify\
+		local selWndId,\
+		local nmhdr,\
+		local nmlistview
+		dim nmhdr, 3
+		dim nmlistview, 4
+	
+		selWndId = ginfo_sel
+		gsel ginfo_intid
+	
+		dupptr nmhdr, lparam, 12
+		switch (nmhdr(0))
+			case ListViewGetWnd(m_listView)
+				if (nmhdr(2) == NM_DBLCLK) {
+					dupptr nmlistview, lparam, 16
+	
+					if (nmlistview(3) != -1) {
+						m_jumpLineNumber = int(ListViewGetItemText(m_listView, nmlistview(3), 0))
+						sendmsg m_hParentWnd, WM_NOTIFY, wparam, lparam
+					}
+				}
+				swbreak
+		swend
+		
+		gsel selWndId
+		return
+	
+#if 1
+	
+	#deffunc LabelListUpdateDefinitionList str _filePath
+		deflist_new deflist, _filePath
+		return
+	
+	#deffunc LabelListDeleteAllItems
+		ListViewDeleteAllItems m_listView
+		return
+	
+	#deffunc LabelListUpdateListView
+		sendmsg ListViewGetWnd(m_listView), WM_SETREDRAW, false, 0		// WM_SETREDRAW
+		
+		LabelListAddItemsToListView
+				
+		// 更新再開
+		sendmsg ListViewGetWnd(m_listView), WM_SETREDRAW, true, 0		// WM_SETREDRAW
+		return
+	
+	#deffunc LabelListAddItemsToListView\
+		local filename,\
+		local iLvItem
+	
+		deflistCount = deflist_getCount   ( deflist(iDL) )
+		
+		if ( deflistCount <= 0 ) { return }
+		
+		repeat deflistCount
+			deflist_get deflist(iDL), cnt, deflistIdent, deflistLn, deflistType, deflistScope
+			stype = MakeDefTypeString( deflistType )
+	
+			ListViewInsertItem m_listView, cnt, strf("%d", deflistLn) : iLvItem = stat
+			ListViewSetItem m_listView, iLvItem, 1, deflistIdent
+			ListViewSetItem m_listView, iLvItem, 2, stype
+			ListViewSetItem m_listView, iLvItem, 3, deflistScope
+		loop
+		return
+	
+	#deffunc LabelListRenew str _filePath
+		LabelListReset
+	
+		LabelListUpdateDefinitionList _filePath
+		LabelListUpdateListView
+		return
+	
+	#deffunc LabelListReset
+		foreach deflist
+			deflist_delete deflist(cnt)
+		loop
+	
+		LabelListDeleteAllItems
+		return
+
+#endif
+
+#global
+
+	LabelListInit
+
+#endif

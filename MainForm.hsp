@@ -1,0 +1,1213 @@
+
+#ifndef mod_MainForm
+
+#include "user32.as"
+#include "shell32.as"
+
+#include "FileSelectDialog.as"
+#include "Splitter.as"
+#include "TabFolder.as"
+#include "Accelerator.as"
+#include "Rebar.as"
+#include "Toolbar.as"
+#include "MenuItem.as"
+#include "HspKeyword.as"
+#include "StatusBar.as"
+#include "INI.as"
+#include "DataGrid.as"
+#include "FindReplaceDialog.as"
+#include "FolderSelectDialog.as"
+
+#include "AboutDialog.hsp"
+#include "ProjectExplorer.hsp"
+#include "ScriptEditor.hsp"
+#include "LabelList.hsp"
+#include "GuiEditor.hsp"
+#include "TempPath.hsp"
+#include "CodeGenerator.hsp"
+#include "Settings.hsp"
+#include "OptionGrid.hsp"
+#include "NewProjectDialog.hsp"
+#include "JumpToDialog.hsp"
+#include "ItemCollectionEditor.hsp"
+
+#module mod_MainForm
+
+	#enum IDM_NEWPROJECT = 1
+	#enum IDM_OPENPROJECT
+	#enum IDM_SAVEPROJECT
+	#enum IDM_CLOSEPROJECT
+	#enum IDM_RUNPROJECT
+	#enum IDM_COMPILERUNPROJECT
+	#enum IDM_COMPILEPROJECT
+	#enum IDM_MAKEEXE
+	#enum IDM_PROJECTOPTION
+	#enum IDM_CLOSE
+	#enum IDM_CLOSEALL
+	#enum IDM_SAVE
+	#enum IDM_SAVEAS
+	#enum IDM_SAVEALL
+	#enum IDM_EXIT
+	#enum IDM_UNDO
+	#enum IDM_REDO
+	#enum IDM_CUT
+	#enum IDM_COPY
+	#enum IDM_PASTE
+	#enum IDM_DELETE
+	#enum IDM_SELECTALL
+	#enum IDM_SEARCH
+	#enum IDM_SEARCHNEXT
+	#enum IDM_REPLACE
+	#enum IDM_JUMPTOTOP
+	#enum IDM_JUMPTOBOTTOM
+	#enum IDM_JUMPTO
+	#enum IDM_LABELLIST
+	#enum IDM_HSPASSISTANT
+	#enum IDM_AHT
+	#enum IDM_HSPTVBROWSER
+	#enum IDM_CONVERTTOCSOURCE
+	#enum IDM_CODEGENERATE
+	#enum IDM_KEYWORDSEARCH
+	#enum IDM_ABOUT
+
+	#enum IDM_ADDNEWITEM
+	#enum IDM_ADDEXISTINGITEM
+	#enum IDM_ADDNEWFOLDER
+	#enum IDM_REMOVEITEM
+	#enum IDM_OPENFILE
+	#enum IDM_SHOWPROPERTY
+	
+	#const SplitterSize 6
+	
+	#define cyRebar RebarGetHeight(m_rebar)
+	#define cyStatusBar StatusBarGetHeight(m_statusBar)
+	#define cyControl (cyRebar + cyStatusBar)
+	
+	#define cxLeftPane SplitterGetDistance(m_splitterID(0))
+	#define cxRightPane SplitterGetDistance(m_splitterID(1))
+	#define cyBottomPane SplitterGetDistance(m_splitterID(2))
+
+	#deffunc MainFormInit\
+		local ret,\
+		local folderList
+	
+		ret = 1
+		do
+			if (ret == 0 || SettingsGetProjectSavePath() == "") {
+				FolderSelectDialogCreate "プロジェクトを保存するフォルダを選択してください。"
+				if (stat == 0) {
+					end
+				}
+				SettingsSetProjectSavePath refstr
+			}
+			sdim folderList
+			dirlist folderList, SettingsGetProjectSavePath(), 5
+			ret = stat
+			if (ret == 0) {
+				dialog SettingsGetProjectSavePath() + " が見つかりません。", 1, ProductName
+			}
+		until (ret == 1)
+		
+		dim m_wndID
+		dim m_hwnd
+		dim m_hSelectedFocus
+	
+		dimtype m_rebar, 5
+		dimtype m_toolbar, 5
+		dim m_hBitmapRebar
+	
+		dimtype m_statusBar, 5
+	
+		syscolor 15
+		colorBtnFace(0) = RGB(ginfo_r, ginfo_g, ginfo_b)
+		colorBtnFace(1) = RGB(200 + int(1.0 * ginfo_r / (255.0 / 55.0) + 0.5), 200 + int(1.0 * ginfo_g / (255.0 / 55.0) + 0.5), 200 + int(1.0 * ginfo_b / (255.0 / 55.0) + 0.5))
+	
+		tempPath = TempPathGet()
+		sdim m_iconFileNames
+		dim m_hToolbarIcon
+		m_iconFileNames = "newproj", "additem", "openproj", "save", "saveall", "undo", "redo", "cut", "copy", "paste", "delete", "start"
+		repeat length(m_iconFileNames)
+#ifdef _debug
+			bcopy "Icons\\" + m_iconFileNames(cnt), tempPath + "\\" + m_iconFileNames(cnt)
+#else
+			bcopy m_iconFileNames(cnt), tempPath + "\\" + m_iconFileNames(cnt)
+#endif
+			m_hToolbarIcon(cnt) = LoadImage(hinstance, tempPath + "\\" + m_iconFileNames(cnt), IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+		loop
+	
+		dim m_splitterID
+		dim m_subTabFolderID
+		dim m_mainTabFolderID
+	
+		sdim m_findString
+		sdim m_replaceString
+		return
+
+	#deffunc MainFormCreate
+		m_wndID = 0
+		bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+		m_hwnd = hwnd
+		title ProductName
+		SetWindowLong hwnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN
+		syscolor 15 : boxf
+	
+		AboutDialogCreate
+		ProjectExplorerCreate
+		LabelListCreate
+		sdim m_output, 0x10000
+		mesbox m_output, , , 4 : m_hOutputTextBox = objinfo_hwnd(stat)
+		GuiEditorCreate
+		NewProjectDialogCreate
+		OptionGridCreate
+		JumpToDialogCreate
+		ItemCollectionEditorCreate
+		
+		m_hAddItemMenu = CreatePopupMenu()
+		MenuItemAdd m_hAddItemMenu, MF_STRING, IDM_ADDNEWITEM, "新しい項目"
+		MenuItemAdd m_hAddItemMenu, MF_STRING, IDM_ADDEXISTINGITEM, "既存の項目"
+	
+		hNewMenu = CreatePopupMenu()
+		MenuItemAdd hNewMenu, MF_STRING, IDM_NEWPROJECT, "プロジェクト(&P)...\tCtrl+Shift+N", m_hToolbarIcon(getImageIndex("newproj"))
+		MenuItemAdd hNewMenu, MF_STRING, IDM_ADDNEWITEM, "ファイル(&F)...\tCtrl+N"
+		hOpenMenu = CreatePopupMenu()
+		MenuItemAdd hOpenMenu, MF_STRING, IDM_OPENPROJECT, "プロジェクト(&P)...\tCtrl+Shift+O", m_hToolbarIcon(getImageIndex("openproj"))
+		MenuItemAdd hOpenMenu, MF_STRING, IDM_ADDEXISTINGITEM, "ファイル(&F)...\tCtrl+O"
+		hCloseMenu = CreatePopupMenu()
+		MenuItemAdd hCloseMenu, MF_STRING, IDM_CLOSEPROJECT, "プロジェクト(&P)\tCtrl+Shift+F4"
+		MenuItemAdd hCloseMenu, MF_STRING, IDM_CLOSE, "ファイル(&F)\tCtrl+F4"
+		hFileMenu = CreatePopupMenu()
+		MenuItemAdd hFileMenu, MF_POPUP, hNewMenu, "新規作成(&N)"
+		MenuItemAdd hFileMenu, MF_POPUP, hOpenMenu, "開く(&O)"
+		MenuItemAdd hFileMenu, MF_POPUP, hCloseMenu, "閉じる(&C)"
+		MenuItemAdd hFileMenu, MF_SEPARATOR, null, ""
+		MenuItemAdd hFileMenu, MF_STRING, IDM_SAVE, "上書き保存(&S)\tCtrl+S", m_hToolbarIcon(getImageIndex("save"))
+		MenuItemAdd hFileMenu, MF_STRING, IDM_SAVEALL, "すべて保存", m_hToolbarIcon(getImageIndex("saveall"))
+		MenuItemAdd hFileMenu, MF_SEPARATOR, null, ""
+		MenuItemAdd hFileMenu, MF_STRING, IDM_EXIT, "終了(&X)"
+		hProjectMenu = CreatePopupMenu()
+		MenuItemAdd hProjectMenu, MF_STRING, IDM_COMPILERUNPROJECT, "コンパイル+実行\tF5", m_hToolbarIcon(getImageIndex("start"))
+		MenuItemAdd hProjectMenu, MF_STRING, IDM_RUNPROJECT, "実行\tF6"
+		MenuItemAdd hProjectMenu, MF_STRING, IDM_COMPILEPROJECT, "コンパイル\tF7"
+		MenuItemAdd hProjectMenu, MF_STRING, IDM_MAKEEXE, "実行ファイル自動作成(&A)\tCtrl+F9"
+		MenuItemAdd hProjectMenu, MF_SEPARATOR, null, ""
+		MenuItemAdd hProjectMenu, MF_STRING, IDM_PROJECTOPTION, "プロジェクト設定(&O)..."
+		hEditMenu = CreatePopupMenu()
+		MenuItemAdd hEditMenu, MF_STRING, IDM_UNDO, "元に戻す(&U)\tCtrl+Z", m_hToolbarIcon(getImageIndex("undo"))
+		MenuItemAdd hEditMenu, MF_STRING, IDM_REDO, "やり直し(&R)\tCtrl+Y", m_hToolbarIcon(getImageIndex("redo"))
+		MenuItemAdd hEditMenu, MF_SEPARATOR, null, "", null
+		MenuItemAdd hEditMenu, MF_STRING, IDM_CUT, "切り取り(&T)\tCtrl+X", m_hToolbarIcon(getImageIndex("cut"))
+		MenuItemAdd hEditMenu, MF_STRING, IDM_COPY, "コピー(&C)\tCtrl+C", m_hToolbarIcon(getImageIndex("copy"))
+		MenuItemAdd hEditMenu, MF_STRING, IDM_PASTE, "貼り付け(&P)\tCtrl+V", m_hToolbarIcon(getImageIndex("paste"))
+		MenuItemAdd hEditMenu, MF_STRING, IDM_DELETE, "削除(&D)\tDel", m_hToolbarIcon(getImageIndex("delete"))
+		MenuItemAdd hEditMenu, MF_SEPARATOR, null, "", null
+		MenuItemAdd hEditMenu, MF_STRING, IDM_SELECTALL, "すべて選択(&A)\tCtrl+A", null
+		hSearchMenu = CreatePopupMenu()
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_SEARCH, "検索(&F)...\tCtrl+F"
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_SEARCHNEXT, "次を検索(&N)\tF3"
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_REPLACE, "置換(&R)...\tCtrl+R"
+		MenuItemAdd hSearchMenu, MF_SEPARATOR, null, ""
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_JUMPTOTOP, "先頭行に移動(&T)\tCtrl+T"
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_JUMPTOBOTTOM, "最終行に移動(&B)\tCtrl+B"
+		MenuItemAdd hSearchMenu, MF_STRING, IDM_JUMPTO, "指定行に移動(&J)...\tCtrl+J"
+		MenuItemAdd hSearchMenu, MF_SEPARATOR, null, ""
+		MenUItemAdd hSearchMenu, MF_STRING, IDM_LABELLIST, "ラベル一覧(&L)\tF11"
+		hToolMenu = CreatePopupMenu()
+		MenuItemAdd hToolMenu, MF_STRING, IDM_HSPASSISTANT, "HSPアシスタント起動(&F)..."
+		MenuItemAdd hToolMenu, MF_STRING, IDM_AHT, "スクリプト自動作成(&T)...
+		MenuItemAdd hToolMenu, MF_STRING, IDM_HSPTVBROWSER, "HSPTVブラウザ起動(&H)..."
+		MenuItemAdd hToolMenu, MF_STRING, IDM_CONVERTTOCSOURCE, "指定ファイルをCソースに変換(&C)..."
+		hHelpMenu = CreatePopupMenu()
+		MenuItemAdd hHelpMenu, MF_STRING, IDM_KEYWORDSEARCH, "HSPキーワード検索(&K)...\tF1"
+		MenuItemAdd hHelpMenu, MF_STRING, IDM_ABOUT, "バージョン情報(&A)...", null
+		hMainMenu = CreateMenu()
+		AppendMenu hMainMenu, MF_POPUP, hFileMenu, "ファイル(&F)"
+		AppendMenu hMainMenu, MF_POPUP, hEditMenu, "編集(&E)"
+		AppendMenu hMainMenu, MF_POPUP, hSearchMenu, "検索(&S)"
+		AppendMenu hMainMenu, MF_POPUP, hProjectMenu, "プロジェクト(&P)"
+		AppendMenu hMainMenu, MF_POPUP, hToolMenu, "ツール(&T)"
+		AppendMenu hMainMenu, MF_POPUP, hHelpMenu, "ヘルプ(&H)"
+		SetMenu hwnd, hMainMenu
+		DrawMenuBar hwnd
+		MenuItemSetMessage
+	
+		hScriptEditorContextMenu = CreatePopupMenu()
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_UNDO, "元に戻す(&U)\tCtrl+Z"
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_REDO, "やり直し(&R)\tCtrl+Y"
+		AppendMenu hScriptEditorContextMenu, MF_SEPARATOR, null, ""
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_CUT, "切り取り(&T)\tCtrl+X"
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_COPY, "コピー(&C)\tCtrl+C"
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_PASTE, "貼り付け(&P)\tCtrl+V"
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_DELETE, "削除(&D)\tDel"
+		AppendMenu hScriptEditorContextMenu, MF_SEPARATOR, null, ""
+		AppendMenu hScriptEditorContextMenu, MF_STRING, IDM_SELECTALL, "すべて選択(&A)\tCtrl+A"
+		ScriptEditorSetContextMenu hScriptEditorContextMenu
+	
+		hGuiEditorContextMenu = CreatePopupMenu()
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_UNDO, "元に戻す(&U)\tCtrl+Z"
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_REDO, "やり直し(&R)\tCtrl+Y"
+		AppendMenu hGuiEditorContextMenu, MF_SEPARATOR, null, ""
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_CUT, "切り取り(&T)\tCtrl+X"
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_COPY, "コピー(&C)\tCtrl+C"
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_PASTE, "貼り付け(&P)\tCtrl+V"
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_DELETE, "削除(&D)\tDel"
+		AppendMenu hGuiEditorContextMenu, MF_SEPARATOR, null, ""
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_SELECTALL, "すべて選択(&A)\tCtrl+A"
+		AppendMenu hGuiEditorContextMenu, MF_SEPARATOR, null, ""
+		AppendMenu hGuiEditorContextMenu, MF_STRING, IDM_CODEGENERATE, "ジェネレート(&G)"
+		GuiEditorSetContextMenu hGuiEditorContextMenu
+	
+		m_hProjectExplorerAddItemMenu = CreatePopupMenu()
+		AppendMenu m_hProjectExplorerAddItemMenu, MF_STRING, IDM_ADDNEWITEM, "新しい項目..."
+		AppendMenu m_hProjectExplorerAddItemMenu, MF_STRING, IDM_ADDEXISTINGITEM, "既存の項目..."
+		AppendMenu m_hProjectExplorerAddItemMenu, MF_STRING, IDM_ADDNEWFOLDER, "新しいフォルダー"
+		m_hProjectExplorerFolderContextMenu = CreatePopupMenu()
+		AppendMenu m_hProjectExplorerFolderContextMenu, MF_POPUP, m_hProjectExplorerAddItemMenu, "追加"
+		AppendMenu m_hProjectExplorerFolderContextMenu, MF_SEPARATOR, null,null
+		AppendMenu m_hProjectExplorerFolderContextMenu, MF_STRING, IDM_REMOVEITEM, "プロジェクトから除外"
+		m_hProjectExplorerFileContextMenu = CreatePopupMenu()
+		AppendMenu m_hProjectExplorerFileContextMenu, MF_STRING, IDM_OPENFILE, "開く"
+		AppendMenu m_hProjectExplorerFileContextMenu, MF_STRING, IDM_REMOVEITEM, "プロジェクトから除外"
+		AppendMenu m_hProjectExplorerFileContextMenu, MF_STRING, IDM_SHOWPROPERTY, "プロパティ..."
+		ProjectExplorerSetFolderContextMenu m_hProjectExplorerFolderContextMenu
+		ProjectExplorerSetFileContextMenu m_hProjectExplorerFileContextMenu
+	
+		gradf hdc, 0, 0, 1, 25, 1, colorBtnFace(1), colorBtnFace(0)
+		m_hBitmapRebar = CreateDIB(0, 0, 1, 25)
+		newmod m_rebar, mod_Rebar, m_hBitmapRebar
+	
+		syscolor 15 : boxf 0, 0, 16 * 16 - 1, 31
+		repeat length(m_iconFileNames)
+			DrawIconEx hdc, 16 * cnt, 0, m_hToolbarIcon(cnt), 16, 16, 0, null, DI_NORMAL
+		loop
+		gmode 4, , , 256 : color 255, 0, 255
+		pos 0, 16 : gcopy m_wndID, 0, 0, 16 * 16, 16
+		hBitmapObjectToolbar = CreateDDB(0, 16, 16 * 16, 16)
+		
+		newmod m_toolbar, mod_toolbar, TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE, hBitmapObjectToolbar, 16
+		ToolbarAddButton m_toolbar, getImageIndex("newproj"), IDM_NEWPROJECT, 4, 0, "新しいプロジェクト"
+		ToolbarAddButton m_toolbar, getImageIndex("additem"), IDM_ADDNEWITEM, 4, 8, "項目の追加"
+		ToolbarAddButton m_toolbar, getImageIndex("openproj"), IDM_OPENPROJECT, 4, 0, "プロジェクトを開く"
+		ToolbarAddButton m_toolbar, getImageIndex("save"), IDM_SAVE, 4, 0, "上書き保存"
+		ToolbarAddButton m_toolbar, getImageIndex("saveall"), IDM_SAVEALL, 4, 0, "すべて保存"
+		ToolbarAddButton m_toolbar, -1, 0, 0, 1, ""
+		ToolbarAddButton m_toolbar, getImageIndex("cut"), IDM_CUT, 4, 0, "切り取り"
+		ToolbarAddButton m_toolbar, getImageIndex("copy"), IDM_COPY, 4, 0, "コピー"
+		ToolbarAddButton m_toolbar, getImageIndex("paste"), IDM_PASTE, 4, 0, "貼り付け"
+		ToolbarAddButton m_toolbar, getImageIndex("delete"), IDM_DELETE, 4, 0, "削除"
+		ToolbarAddButton m_toolbar, -1, 0, 0, 1, ""
+		ToolbarAddButton m_toolbar, getImageIndex("undo"), IDM_UNDO, 4, 0, "元に戻す"
+		ToolbarAddButton m_toolbar, getImageIndex("redo"), IDM_REDO, 4, 0, "やり直し"
+		ToolbarAddButton m_toolbar, -1, 0, 0, 1, ""
+		ToolbarAddButton m_toolbar, getImageIndex("start"), IDM_COMPILERUNPROJECT, 4, 0, "コンパイル+実行"
+		RebarInsertBand m_rebar, ToolbarGetWnd(m_toolbar(0))
+	
+		m_statusBarParts = -1
+		newmod m_statusBar, mod_StatusBar, m_statusBarParts, 0, 0
+	
+		SplitterCreate 1, SplitterSize, 200, 0 : m_splitterID(0) = stat
+		SplitterCreate 1, -SplitterSize, 200, 0 : m_splitterID(1) = stat
+		SplitterCreate 0, -SplitterSize, 0, 120 + cyStatusBar : m_splitterID(2) = stat
+		SplitterSetMessage
+	
+		TabFolderCreate ginfo_newid : m_subTabFolderID(0) = stat
+		TabFolderAddItem m_subTabFolderID(0), "", TIS_AUTOSIZE, ProjectExplorerGetHWnd(), "プロジェクト"
+		TabFolderAddItem m_subTabFolderID(0), "", TIS_AUTOSIZE, GuiEditorGetToolBoxWnd(), "ツールボックス"
+		TabFolderSetSelectedItem m_subTabFolderID(0), 0
+		TabFolderCreate ginfo_newid : m_subTabFolderID(1) = stat
+		TabFolderAddItem m_subTabFolderID(1), "", TIS_AUTOSIZE, LabelListGetWnd(), "ラベル一覧"
+		TabFolderAddItem m_subTabFolderID(1), "", TIS_AUTOSIZE, GuiEditorGetPropertyGridWnd(), "プロパティ"
+		TabFolderSetSelectedItem m_subTabFolderID(1), 0
+		TabFolderCreate ginfo_newid : m_subTabFolderID(2) = stat
+		TabFolderAddItem m_subTabFolderID(2), "", TIS_AUTOSIZE, m_hOutputTextBox, "コンパイル"
+		TabFolderSetSelectedItem m_subTabFolderID(2), 0
+	
+		hMainTabFolderMenu = CreatePopupMenu()
+		AppendMenu hMainTabFolderMenu, MF_STRING, IDM_CLOSE, "閉じる"
+		TabFolderCreate ginfo_newid, , , , , , , hMainTabFolderMenu : m_mainTabFolderID = stat
+	
+		AcceleratorAdd FCONTROL | FSHIFT, 'N', IDM_NEWPROJECT
+		AcceleratorAdd FCONTROL | FSHIFT, 'O', IDM_OPENPROJECT
+		AcceleratorAdd FCONTROL | FSHIFT, 115, IDM_CLOSEPROJECT
+		AcceleratorAdd FCONTROL, 'N', IDM_ADDNEWITEM
+		AcceleratorAdd FCONTROL, 'O', IDM_ADDEXISTINGITEM
+		AcceleratorAdd FCONTROL, 'S', IDM_SAVE
+		AcceleratorAdd FCONTROL, 115, IDM_CLOSE
+		AcceleratorAdd FCONTROL, 'Z', IDM_UNDO
+		AcceleratorAdd FCONTROL, 'Y', IDM_REDO
+		AcceleratorAdd FCONTROL, 'X', IDM_CUT
+		AcceleratorAdd FCONTROL, 'C', IDM_COPY
+		AcceleratorAdd FCONTROL, 'V', IDM_PASTE
+		AcceleratorAdd FNOINVERT, 46, IDM_DELETE
+		AcceleratorAdd FCONTROL, 'A', IDM_SELECTALL
+		AcceleratorAdd FCONTROL, 'F', IDM_SEARCH
+		AcceleratorAdd FNOINVERT, 114, IDM_SEARCHNEXT
+		AcceleratorAdd FCONTROL, 'R', IDM_REPLACE
+		AcceleratorAdd FCONTROL, 'T', IDM_JUMPTOTOP
+		AcceleratorAdd FCONTROL, 'B', IDM_JUMPTOBOTTOM
+		AcceleratorAdd FCONTROL, 'J', IDM_JUMPTO
+		AcceleratorAdd FNOINVERT, 112, IDM_KEYWORDSEARCH
+		AcceleratorAdd FNOINVERT, 116, IDM_COMPILERUNPROJECT
+		AcceleratorAdd FNOINVERT, 117, IDM_RUNPROJECT
+		AcceleratorAdd FNOINVERT, 118, IDM_COMPILEPROJECT
+		AcceleratorAdd FCONTROL, 120, IDM_MAKEEXE
+		AcceleratorAdd FNOINVERT, 122, IDM_LABELLIST
+		AcceleratorApply
+	
+		oncmd gosub *OnSize, WM_SIZE
+		oncmd gosub *OnCommand, WM_COMMAND
+		oncmd gosub *OnClose, WM_CLOSE
+		oncmd gosub *OnDropFiles, WM_DROPFILES
+		oncmd gosub *OnNCActivate, WM_NCACTIVATE
+		oncmd gosub *OnNotify, WM_NOTIFY
+		oncmd gosub *OnFindReplace, FindReplaceDialogGetMessageID()
+	
+		DragAcceptFiles hwnd, 1
+	
+		wx = 960 : wy = 600
+		width wx, wy, ginfo_dispx - wx >> 1, ginfo_dispy - wy >> 1
+		gsel m_wndID, 1
+		return
+	
+	*OnSize
+		MainForm_Resize
+		return
+	#deffunc local MainForm_Resize\
+		local selWndID
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		Rebar_Resize m_rebar
+		StatusBar_Resize m_statusBar
+	
+		resizeControls
+	
+		gsel selWndID
+		return
+	
+	*OnCommand
+		MainForm_Command
+		return
+	#deffunc local MainForm_Command\
+		local curdir,\
+		local filePath, local id,\
+		local fileType,\
+		local wp, local lp,\
+		local i,\
+		local startLine, local startPos, local endLine, local endPos,\
+		local szLine, local keywordStartPos, local keywordEndPos,\
+		local ret,\
+		local hItem
+	
+		getMainTabFolderItemName TabFolderGetSelectedItem(m_mainTabFolderID), filePath, id
+		fileType = getpath(filePath, 2 | 16)
+	
+		wp = wparam
+		lp = lparam
+		
+		if (lp == 0 || lp == ToolbarGetWnd(m_toolbar)) {
+			switch (LOWORD(wp))
+			case IDM_NEWPROJECT
+				//dialog "新しいプロジェクト"
+				NewProjectDialogShow : ret = stat : filePath = refstr
+				if (ret != 0) {
+					MainFormCloseProject
+					if (stat == false) {
+						swbreak
+					}
+					ProjectExplorerNewProject filePath
+				}
+				swbreak
+			case IDM_OPENPROJECT
+				//dialog "プロジェクトを開く"
+				curdir = dir_cur
+				FileSelectDialogCreate 0, SettingsGetProjectSavePath(), "プロジェクトを開く", "", "HSP プロジェクトファイル (*.hsproj)|*.hsproj|", 0
+				if (stat != 0) {
+					filePath = refstr
+					MainFormCloseProject
+					ProjectExplorerOpenProject filePath
+				}
+				chdir curdir
+				swbreak
+			case IDM_SAVEPROJECT
+				//dialog "プロジェクトの保存"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerSaveProject
+				swbreak
+			case IDM_CLOSEPROJECT
+				//dialog "プロジェクトを閉じる"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				m_output = ""
+				sendmsg m_hOutputTextBox, WM_SETTEXT, 0, varptr(m_output)
+				MainFormCloseProject
+				swbreak
+			case IDM_COMPILERUNPROJECT
+				//dialog "コンパイル+実行"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerCompile : ret = stat
+				m_output = ProjectCompilerGetMessage()
+				sendmsg m_hOutputTextBox, WM_SETTEXT, 0, varptr(m_output)
+				if (ret == false) {
+					PlaySound "SystemExclamation", 0, $1
+					return
+				}
+				ProjectExplorerRun
+				swbreak
+			case IDM_RUNPROJECT
+				//dialog "実行"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerRun
+				swbreak
+			case IDM_COMPILEPROJECT
+				//dialog "コンパイル"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerCompile : ret = stat
+				m_output = ProjectCompilerGetMessage()
+				sendmsg m_hOutputTextBox, WM_SETTEXT, 0, varptr(m_output)
+				if (ret == false) {
+					PlaySound "SystemExclamation", 0, $1
+					return
+				}
+				swbreak
+			case IDM_MAKEEXE
+				//dialog "実行ファイル自動作成"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerMakeExe : ret = stat
+				m_output = ProjectCompilerGetMessage()
+				sendmsg m_hOutputTextBox, WM_SETTEXT, 0, varptr(m_output)
+				if (ret == false) {
+					PlaySound "SystemExclamation", 0, $1
+					return
+				} else {
+					dialog "実行ファイルを作成しました。", 0, ProductName
+				}
+				swbreak
+			case IDM_PROJECTOPTION
+				//dialog "プロジェクト設定"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				MainFormOpenFile ProjectExplorerGetProjectFilePath()
+				swbreak
+			case IDM_CLOSE
+				//dialog "閉じる"
+				MainFormCloseFile TabFolderGetSelectedItem(m_mainTabFolderID)
+				swbreak
+			case IDM_CLOSEALL
+				MainFormCloseAllFile
+				swbreak
+			case IDM_SAVE
+				//dialog "上書き保存"
+				MainFormSaveFile TabFolderGetSelectedItem(m_mainTabFolderID)
+				swbreak
+			case IDM_SAVEALL
+				MainFormSaveAllFile
+				swbreak
+			case IDM_EXIT
+				sendmsg m_hwnd, WM_CLOSE, 0, 0
+				swbreak
+			case IDM_HSPASSISTANT
+				//dialog "HSPアシスタント"
+				if (exist(SettingsGetHSPInstallPath() + "\\hspat.exe") == -1) {
+					dialog "hspat.exe が見つかりません。", 1, ProductName
+					return
+				}
+				exec SettingsGetHSPInstallPath() + "\\hspat.exe"
+				swbreak
+			case IDM_AHT
+				//dialog "スクリプト自動作成"
+				if (exist(SettingsGetHSPInstallPath() + "\\ahtman.exe") == -1) {
+					dialog "ahtman.exe が見つかりません。", 1, ProductName
+					return
+				}
+				exec SettingsGetHSPInstallPath() + "\\ahtman.exe"
+				swbreak
+			case IDM_HSPTVBROWSER
+				//dialog "HSPTVブラウザ"
+				if (exist(SettingsGetHSPInstallPath() + "\\hsptv.exe") == -1) {
+					dialog "hsptv.exe が見つかりません。", 1, ProductName
+					return
+				}
+				exec SettingsGetHSPInstallPath() + "\\hsptv.exe"
+				swbreak
+			case IDM_CONVERTTOCSOURCE
+				//dialog "指定ファイルをCソースに変換"
+				if (exist(SettingsGetHSPInstallPath() + "\\hsp3dh.exe") == -1) {
+					dialog "hsp3dh.exe が見つかりません。", 1, ProductName
+					return
+				}
+				exec SettingsGetHSPInstallPath() + "\\hsp3dh.exe"
+				swbreak
+			case IDM_ABOUT
+				AboutDialogShow
+				swbreak
+			case IDM_ADDNEWITEM
+				//dialog "新しい項目"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerAddNewItem ProjectExplorerGetSelectedItem()
+				swbreak
+			case IDM_ADDEXISTINGITEM
+				//dialog "既存の項目"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerAddExistingItem ProjectExplorerGetSelectedItem()
+				swbreak
+			case IDM_ADDNEWFOLDER
+				//dialog "新しいフォルダー"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				ProjectExplorerAddNewFolder ProjectExplorerGetSelectedItem()
+				swbreak
+			case IDM_OPENFILE
+				//dialog "開く"
+				ProjectExplorerOpenFile ProjectExplorerGetSelectedItem()
+				swbreak
+			case IDM_REMOVEITEM
+				//dialog "プロジェクトから除外"
+				if (ProjectExplorerGetProjectFilePath() == "") {
+					swbreak
+				}
+				hItem = ProjectExplorerGetSelectedItem()
+				ProjectExplorerRemoveItem hItem
+				if (hItem == ProjectExplorerGetRootItem()) {
+					MainFormCloseAllFile
+					ProjectExplorerCloseProject
+				}
+				swbreak
+			case IDM_SHOWPROPERTY
+				//dialog "プロパティ"
+				ProjectExplorerShowProperty ProjectExplorerGetSelectedItem()
+				swbreak
+			swend
+			if (fileType == ".hsp" || fileType == ".as") {
+				switch (LOWORD(wp))
+				case IDM_UNDO
+					//dialog "元に戻す"
+					ScriptEditorUndo id
+					swbreak
+				case IDM_REDO
+					//dialog "やり直し"
+					ScriptEditorRedo id
+					swbreak
+				case IDM_CUT
+					//dialog "切り取り"
+					ScriptEditorCut id
+					swbreak
+				case IDM_COPY
+					//dialog "コピー"
+					ScriptEditorCopy id
+					swbreak
+				case IDM_PASTE
+					//dialog "貼り付け"
+					ScriptEditorPaste id
+					swbreak
+				case IDM_DELETE
+					//dialog "削除"
+					switch (HIWORD(wp))
+					case 0
+						if (ScriptEditorGetSelLength(id) > 0) {
+							sendmsg ScriptEditorGetWnd(id), WM_KEYDOWN, 46, 0
+						}
+						swbreak
+					case 1
+						sendmsg ScriptEditorGetWnd(id), WM_KEYDOWN, 46, 0
+						swbreak
+					swend
+					swbreak
+				case IDM_SELECTALL
+					//dialog "すべて選択"
+					ScriptEditorSelectAll id
+					swbreak
+				case IDM_SEARCH
+					//dialog "検索"
+					if (FindWindow(null, "検索") != null) {
+						swbreak
+					}
+					m_hSelectedFocus = GetFocus()
+					dim m_message
+					FindReplaceDialogCreate 0, FR_DOWN | FR_FINDNEXT | FR_HIDEWHOLEWORD | FR_HIDEMATCHCASE, varptr(m_findString), null, m_message
+					swbreak
+				case IDM_SEARCHNEXT
+					//dialog "次を検索"
+					if (m_findString != "") {
+						ScriptEditorSearch id, m_findString, SEARCH_FROMCURSOR | SEARCH_BEEP_ON_404
+					}
+					swbreak
+				case IDM_REPLACE
+					//dialog "置換"
+					if (FindWindow(null, "置換") != null) {
+						swbreak
+					}
+					m_hSelectedFocus = GetFocus()
+					dim m_message
+					FindReplaceDialogCreate 1, FR_DOWN | FR_FINDNEXT | FR_HIDEWHOLEWORD | FR_HIDEMATCHCASE, varptr(m_findString), varptr(m_replaceString), m_message
+					swbreak
+				case IDM_JUMPTOTOP
+					//dialog "先頭行に移動"
+					ScriptEditorSetCaretPosition id, 0, 0
+					swbreak
+				case IDM_JUMPTOBOTTOM
+					//dialog "最終行に移動"
+					ScriptEditorSetCaretPosition id, ScriptEditorGetLines(id) - 1, 0
+					swbreak
+				case IDM_JUMPTO
+					//dialog "指定行に移動"
+					JumpToDialogShow : startLine = int(refstr)
+					if (stat != 0) {
+						//dialog refstr
+						ScriptEditorSetCaretPosition id, startLine - 1, 0
+					}
+					swbreak
+				case IDM_LABELLIST
+					//dialog "ラベル一覧"
+					LabelListRenew filePath
+					swbreak
+				case IDM_KEYWORDSEARCH
+					//dialog "キーワード検索"
+					ScriptEditorGetCaretPosition id, startLine, startPos, endLine, endPos
+					ScriptEditorGetLineText id, szLine, startLine
+					keywordStartPos = HspKeywordGetStartPos(szLine, startPos)
+					keywordEndPos = HspKeywordGetEndPos(szLine, startPos)
+					if (exist(SettingsGetHSPInstallPath() + "\\hsphelp\\helpman.exe") == -1) {
+						dialog "helpman.exe が見つかりません。", 1, ProductName
+						return
+					}
+					exec SettingsGetHSPInstallPath() + "\\hsphelp\\helpman.exe " + strmid(szLine, keywordStartPos, keywordEndPos - keywordStartPos)
+					swbreak
+				swend
+			}
+			if (fileType == ".hgs") {
+				switch (LOWORD(wp))
+				case IDM_UNDO
+					//dialog "元に戻す"
+					GuiEditorUndo id
+					swbreak
+				case IDM_REDO
+					//dialog "やり直し"
+					GuiEditorRedo id
+					swbreak
+				case IDM_CUT
+					//dialog "切り取り"
+					GuiEditorCutObject id, GuiEditorGetSelectedObjectID(id)
+					swbreak
+				case IDM_COPY
+					//dialog "コピー"
+					GuiEditorCopyObject id, GuiEditorGetSelectedObjectID(id)
+					swbreak
+				case IDM_PASTE
+					//dialog "貼り付け"
+					GuiEditorPasteObject id, GuiEditorGetSelectedObjectID(id)
+					swbreak
+				case IDM_DELETE
+					//dialog "削除"
+					GuiEditorDeleteObject id, GuiEditorGetSelectedObjectID(id)
+					swbreak
+				case IDM_SELECTALL
+					//dialog "すべて選択"
+					swbreak
+				case IDM_CODEGENERATE
+					//dialog "ジェネレート"
+					GuiEditorGenerate id
+					swbreak
+				swend
+			}
+		}
+	
+		if (fileType == ".hsp" || fileType == ".as") {
+			if (lp == ScriptEditorGetWnd(id)) {
+				if (HIWORD(wp) == 0x400/*EN_UPDATE*/) {
+					setMainTabFolderIsEditedText TabFolderGetSelectedItem(m_mainTabFolderID)
+				}
+			}
+		}
+		if (fileType == ".hgs") {
+			if (lp == GuiEditorGetWnd()) {
+				if (HIWORD(wp) == 0x400/*EN_UPDATE*/) {
+					setMainTabFolderIsEditedText TabFolderGetSelectedItem(m_mainTabFolderID)
+				}
+			}
+		}
+		if (fileType == ".hsproj") {
+			if (lp == OptionGridGetWnd()) {
+				if (HIWORD(wp) == 0x300/*EN_CHANGE*/) {
+					setMainTabFolderIsEditedText TabFolderGetSelectedItem(m_mainTabFolderID)
+				}
+			}
+		}
+		return
+	
+	*OnClose
+		MainForm_Close
+		return
+	#deffunc local MainForm_Close
+		oncmd 0
+	
+		AutoCompleteEnd
+	
+		MainFormCloseProject
+		if (stat == false) {
+			oncmd 1
+			return
+		}
+		return
+	
+	*OnDropFiles
+		MainForm_DropFiles
+		return
+	#deffunc local MainForm_DropFiles\
+		local selWndID,\
+		local hDrop,\
+		local point,\
+		local fileCount,\
+		local filePath
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		hDrop = wparam
+	
+		dim point, 2
+		DragQueryPoint hDrop, varptr(point)
+	
+		fileCount = DragQueryFile(hDrop, -1, 0, 0)
+	
+		sdim filePath, MAX_PATH
+		repeat fileCount
+			DragQueryFile hDrop, cnt, varptr(filePath), MAX_PATH
+			if (exist(filePath) == -1) {
+				dialog filePath + " が見つかりませんでした。", 1, ProductName
+				continue
+			}
+			MainFormOpenFile filePath
+		loop
+	
+		DragFinish hDrop
+	
+		gsel selWndID
+		return
+	
+	*OnNCActivate
+		if (wparam == false) {
+			if (lparam == AutoCompleteWndGetWnd()) {
+				return true
+			}
+		}
+		return
+	
+	*OnNotify
+		MainForm_Notify
+		return
+	#deffunc local MainForm_Notify\
+		local selWndID,\
+		local nmhdr,\
+		local filePath, local id,\
+		local fileType,\
+		local nmtoolbar,\
+		local rect, local point,\
+		local data
+	
+		selWndID = ginfo_sel
+		gsel ginfo_intid
+	
+		dim nmhdr, 3
+		dupptr nmhdr, lparam, 12
+		switch (nmhdr(0))
+		case RebarGetWnd(m_rebar)
+			if (nmhdr(2) == RBN_HEIGHTCHANGE) {
+				resizeControls
+			}
+			swbreak
+		case ToolbarGetWnd(m_toolbar)
+			if (nmhdr(2) == TBN_DROPDOWN) {
+				dim nmtoolbar, 11
+				dupptr nmtoolbar, lparam, 44
+				if (nmtoolbar(3) == IDM_ADDNEWITEM) {
+					dim rect, 4
+					sendmsg ToolbarGetWnd(m_toolbar), TB_GETRECT, nmtoolbar(3), varptr(rect)
+					point = rect(0), rect(3)
+					ClientToScreen ToolbarGetWnd(m_toolbar), varptr(point)
+					TrackPopupMenu m_hAddItemMenu, 0, point(0), point(1), 0, hwnd, 0
+				}
+			}
+			swbreak
+		case TabFolderGetWnd(m_mainTabFolderID)
+			if (nmhdr(2) == TCN_SELCHANGE) {
+				GuiEditorClearPropertyGrid
+				
+				getMainTabFolderItemName TabFolderGetSelectedItem(m_mainTabFolderID), filePath, id
+				fileType = getpath(filePath, 2 | 16)
+	
+				if (fileType == ".hsp" || fileType == ".as") {
+					LabelListRenew filePath
+				} else {
+					LabelListDeleteAllItems
+				}
+				if (fileType == ".hgs") {
+					GuiEditorChangeID id
+				}
+				if (fileType == ".hsproj") {
+					
+				}
+			}
+			swbreak
+		case LabelListGetListViewWnd()
+			if (nmhdr(2) == NM_DBLCLK) {
+				getMainTabFolderItemName TabFolderGetSelectedItem(m_mainTabFolderID), filePath, id
+				fileType = getpath(filePath, 2 | 16)
+				
+				ScriptEditorSetCaretPosition id, LabelListGetJumpLineNumber() - 1, 0
+				SetFocus ScriptEditorGetWnd(id)
+			}
+			swbreak
+		case PropertyGridGetDataGridWnd()
+			if (nmhdr(2) == BN_CLICKED) {
+				data = PropertyGridGetCellData(PropertyGridGetSelectedRow(), PropertyGridGetSelectedColumn())
+				strrep data, "\\n", "\n"
+				strrep data, "\\t", "\t"
+				ItemCollectionEditorShow data
+				if (stat != 0) {
+					data = refstr
+					strrep data, "\n", "\\n"
+					strrep data, "\t", "\\t"
+					PropertyGridSetCellData PropertyGridGetSelectedRow(), PropertyGridGetSelectedColumn(), data
+					GuiEditorSetObjectList
+				}
+			}
+			swbreak
+		swend
+	
+		gsel selWndID
+		return
+	
+	*OnFindReplace
+		MainForm_FindReplace
+		return
+	#deffunc local MainForm_FindReplace\
+		local flag,\
+		local filePath, local id, local fileType
+	
+		getMainTabFolderItemName TabFolderGetSelectedItem(m_mainTabFolderID), filePath, id
+		fileType = getpath(filePath, 2 | 16)
+	
+		if (m_message & 0x40) {
+			// キャンセル
+			
+		}
+	
+		flag = SEARCH_FROMCURSOR | SEARCH_BEEP_ON_404
+		if (m_message & 0x01) {
+			// 下へ
+		} else {
+			// 上へ
+			flag |= SEARCH_BACK
+		}
+		if (m_message & 0x04) {
+			// 区別する
+			
+		}
+	
+		if (m_message & 0x08) {
+			// 次を検索
+			ScriptEditorSearch id, m_findString, flag
+		}
+		if (m_message & 0x10) {
+			// 置換して次に
+			ScriptEditorSearch id, m_findString, flag
+			if (stat != -8) {
+				ScriptEditorSetSelText id, m_replaceString
+			}
+		}
+		if (m_message & 0x20) {
+			// すべて置換
+			repeat
+				ScriptEditorSearch id, m_findString, flag
+				if (stat == -8) {
+					break
+				}
+				ScriptEditorSetSelText id, m_replaceString
+			loop
+		}
+		return
+	
+	#deffunc local resizeControls\
+		local rect,\
+		local name, local filePath, local id,\
+		local fileType
+		
+		SplitterMove m_splitterID(0), SplitterGetPos(m_splitterID(2)) - cyRebar, cyRebar, 0, SplitterGetPos(m_splitterID(1)) - SplitterSize
+		SplitterMove m_splitterID(1), SplitterGetPos(m_splitterID(2)) - cyRebar, cyRebar, SplitterGetPos(m_splitterID(0)) + SplitterSize, ginfo_winx - SplitterSize
+		SplitterMove m_splitterID(2), ginfo_winx, 0, cyRebar, ginfo_winy - (cyStatusBar + SplitterSize)
+	
+		gradf hdc, 0, 0, ginfo_winx, ginfo_winy, 0, colorBtnFace(0), colorBtnFace(1)
+	
+		TabFolderMove m_subTabFolderID(0), 0, cyRebar, cxLeftPane, ginfo_winy - (cyRebar + cyBottomPane + SplitterSize)
+		TabFolderMove m_subTabFolderID(1), SplitterGetPos(m_splitterID(1)) + SplitterSize, cyRebar, cxRightPane, ginfo_winy - (cyRebar + cyBottomPane + SplitterSize)
+		TabFolderMove m_subTabFolderID(2), 0, SplitterGetPos(m_splitterID(2)) + SplitterSize, ginfo_winx, cyBottomPane - cyStatusBar
+	
+		TabFolderMove m_mainTabFolderID, SplitterGetPos(m_splitterID(0)) + SplitterSize, cyRebar, ginfo_winx - (cxLeftPane + cxRightPane + SplitterSize * 2), ginfo_winy - (cyRebar + cyBottomPane + SplitterSize)
+		
+		dim rect, 4
+		TabFolderGetRect m_mainTabFolderID, rect
+		repeat TabFolderGetItemCount(m_mainTabFolderID)
+			getMainTabFolderItemName cnt, filePath, id
+			fileType = getpath(filePath, 2 | 16)
+			if (fileType == ".hsp" || fileType = ".as") {
+				ScriptEditorMove id, rect(0), rect(1), rect(2), rect(3)
+			}
+		loop
+		return
+	
+	#defcfunc MainFormGetHWnd
+		return m_hwnd
+	
+	#deffunc MainFormCloseProject\
+		local ret
+		
+		MainFormCloseAllFile
+		ret = stat
+	
+		if (ret != false) {
+			GuiEditorClearPropertyGrid
+			ProjectExplorerCloseProject
+		}
+		return ret
+	
+	#deffunc MainFormOpenFile str _filePath,\
+		local selectedID,\
+		local filePath, local id,\
+		local fileType,\
+	
+		selectedID = -1
+		repeat TabFolderGetItemCount(m_mainTabFolderID)
+		getMainTabFolderItemName cnt, filePath, id
+			if (_filePath == filePath) {
+				selectedID = cnt
+				break
+			}
+		loop
+		if (selectedID != -1) {
+			TabFolderSetSelectedItem m_mainTabFolderID, selectedID
+			return
+		}
+		
+		fileType = getpath(_filePath, 2 | 16)
+		switch (fileType)
+		case ".hsp"
+		case ".as"
+			ScriptEditorCreate _filePath : id = stat
+			TabFolderAddItem m_mainTabFolderID, "" + _filePath + "\t" + id, TIS_NORMAL, ScriptEditorGetWnd(id), getpath(_filePath, 8)
+			swbreak
+		case ".hgs"
+			GuiEditorOpenFile _filePath : id = stat
+			if (id == -1) {
+				swbreak
+			}
+			TabFolderAddItem m_mainTabFolderID, "" + _filePath + "\t" + id, TIS_AUTOSIZE, GuiEditorGetWnd(), getpath(_filePath, 8)
+			swbreak
+		case ".hsproj"
+			OptionGridSet ProjectExplorerGetProperty()
+			TabFolderAddItem m_mainTabFolderID, "" + _filePath + "\t" + (-1), TIS_AUTOSIZE, OptionGridGetWnd(), getpath(_filePath, 8)
+			swbreak
+		default
+			exec _filePath, 16
+			swbreak
+		swend
+		return
+	
+	#deffunc MainFormCloseFile int _index,\
+		local filePath, local id,\
+		local fileType,\
+		local ret,\
+		local hSelectedFocus
+		
+		if (TabFolderGetItemCount(m_mainTabFolderID) == 0) {
+			return false
+		}
+	
+		getMainTabFolderItemName _index, filePath, id
+		fileType = getpath(filePath, 2 | 16)
+		switch (fileType)
+		case ".hsp"
+		case ".as"
+			if (ScriptEditorIsEdited(id) == true) {
+				hSelectedFocus = GetFocus()
+				MessageBox m_hwnd, getpath(filePath, 8) + " への変更を保存しますか?", ProductName, MB_YESNOCANCEL | MB_ICONQUESTION
+				ret = stat
+				if (ret == 2) {
+					SetFocus hSelectedFocus
+					return false
+				}
+				if (ret == 6) {
+					ScriptEditorSaveToFile id
+				}
+			}
+			ScriptEditorDestroy id
+			swbreak
+		case ".hgs"
+			if (GuiEditorIsEdit(id) == true) {
+				hSelectedFocus = GetFocus()
+				MessageBox m_hwnd, getpath(filePath, 8) + " への変更を保存しますか?", ProductName, MB_YESNOCANCEL | MB_ICONQUESTION
+				ret = stat
+				if (ret == 2) {
+					SetFocus hSelectedFocus
+					return false
+				}
+				if (ret == 6) {
+					GuiEditorSaveFile id
+				}
+			}
+			GuiEditorHide
+			GuiEditorDestroy id
+			swbreak
+		case ".hsproj"
+			if (OptionGridIsEdit() == true) {
+				hSelectedFocus = GetFocus()
+				MessageBox m_hwnd, getpath(filePath, 8) + " への変更を保存しますか?", ProductName, MB_YESNOCANCEL | MB_ICONQUESTION
+				ret = stat
+				if (ret == 2) {
+					SetFocus hSelectedFocus
+					return false
+				}
+				if (ret == 6) {
+					ProjectExplorerSetProperty OptionGridGet()
+					ProjectExplorerSaveProject
+					OptionGridReset
+				}
+			}
+			OptionGridHide
+			swbreak
+		swend
+		TabFolderDeleteItem m_mainTabFolderID, _index
+		return true
+	
+	#deffunc MainFormCloseAllFile\
+		local isBreak
+	
+		isBreak = false
+		
+		i = TabFolderGetItemCount(m_mainTabFolderID) - 1
+		if (i > 0) {
+			TabFolderSetSelectedItem m_mainTabFolderID, i
+		}
+		repeat TabFolderGetItemCount(m_mainTabFolderID)
+			MainFormCloseFile i
+			if (stat == false) {
+				isBreak = true
+				break
+			}
+			i--
+		loop
+		if (isBreak != false) {
+			isBreak = false
+			return false
+		}
+		return true
+	
+	#deffunc MainFormSaveFile int _index,\
+		local filePath, local id,\
+		local fileType
+		
+		if (TabFolderGetItemCount(m_mainTabFolderID) == 0) {
+			return
+		}
+	
+		getMainTabFolderItemName _index, filePath, id
+		fileType = getpath(filePath, 2 | 16)
+		switch (fileType)
+		case ".hsp"
+		case ".as"
+			ScriptEditorSaveToFile id
+			setMainTabFolderIsEditedText _index
+			swbreak
+		case ".hgs"
+			GuiEditorSaveFile id
+			swbreak
+		case ".hsproj"
+			ProjectExplorerSetProperty OptionGridGet()
+			ProjectExplorerSaveProject
+			OptionGridReset
+			setMainTabFolderIsEditedText _index
+			swbreak
+		swend
+		return
+	
+	#deffunc MainFormSaveAllFile
+		repeat TabFolderGetItemCount(m_mainTabFolderID)
+			MainFormSaveFile cnt
+		loop
+		return
+	
+	#deffunc local setMainTabFolderIsEditedText int _index,\
+		local id, local filePath,\
+		local fileType
+		
+		getMainTabFolderItemName _index, filePath, id
+		fileType = getpath(filePath, 2 | 16)
+	
+		switch (fileType)
+		case ".hsp"
+		case ".as"
+			if (ScriptEditorIsEdited(id) == false) {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8)
+			} else {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8) + " *"
+			}
+			swbreak
+		case ".hgs"
+			if (GuiEditorIsEdit(id) == false) {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8)
+			} else {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8) + " *"
+			}
+			swbreak
+		case ".hsproj"
+			if (OptionGridIsEdit() == false) {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8)
+			} else {
+				TabFolderSetItemText m_mainTabFolderID, _index, getpath(filePath, 8) + " *"
+			}
+			swbreak
+		swend
+		return
+	
+	#deffunc local getMainTabFolderItemName int _index, var _filePath, var _id,\
+		local name
+	
+		name = TabFolderGetItemName(m_mainTabFolderID, _index)
+		split name, "\t", _filePath, _id
+		_id = int(_id)
+		return
+	
+	#defcfunc local getImageIndex str _fileName,\
+		local ret
+	
+		ret = -1
+		repeat length(m_iconFileNames)
+			if (_fileName == m_iconFileNames(cnt)) {
+				ret = cnt
+				break
+			}
+		loop
+		return ret
+
+#global
+
+	MainFormInit
+
+#endif

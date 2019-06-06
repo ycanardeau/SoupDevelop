@@ -1,0 +1,501 @@
+
+#ifndef mod_ScriptEditor
+
+#include "user32.as"
+
+#include "hscallbk.as"
+#include "AutoComplete.as"
+#include "hhx_db.as"
+
+#include "Settings.hsp"
+
+#module mod_ScriptEditor
+
+	#include "Footy2.as"
+	
+	#uselib ""
+	#func ScriptEditorProc "" int, int, int, int
+	#func ScriptEditorFocus "" int, int, int, int
+	#func ScriptEditorMoveCaret "" int, int, int, int
+	#func ScriptEditorTextModified "" int, int, int
+
+	#include "winmm.as"
+
+	#deffunc ScriptEditorInit\
+		local curdir,\
+		local fileList, local fileName, local fileSize,\
+		local len,\
+		local index,\
+		local i,\
+		local keywords, local keywordData, local buf
+		
+		dim m_hParentWnd
+		m_hParentWnd = hwnd
+		
+		AutoCompleteInit ginfo_newid
+	
+		dim m_hContextMenu
+	
+		dim m_lpfnScriptEditorProc
+		dim m_lpfnScriptEditorFocus
+		dim m_lpfnScriptEditorTextModified
+		setcallbk m_lpfnScriptEditorProc, ScriptEditorProc, *OnScriptEditorProc
+		setcallbk m_lpfnScriptEditorFocus, ScriptEditorFocus, *OnScriptEditorFocus
+		setcallbk m_lpfnScriptEditorTextModified, ScriptEditorTextModified, *OnScriptEditorTextModified
+		
+		dim m_hwnd
+		dim m_lpfnDefFooty
+		dim m_selectedID
+		sdim m_filePath
+	
+		sdim m_keywordDataBase
+		dim m_countOfKeywords
+		
+		loadHHX
+		return
+	
+	#deffunc local loadHHX local temp,\
+		local curdir
+	
+		curdir = dir_cur
+		chdir SettingsGetHSPInstallPath()
+		dirlist temp, "hsphelp", 5
+		if (stat == 0) {
+			//dialog "hsphelpディレクトリが見つかりません。", 1
+			goto *@f
+		}
+		chdir SettingsGetHSPInstallPath() + "\\hsphelp"
+		
+		HHX_init_load_db
+		if (HHX_currentset_sum() != HHX_diskset_sum()) {
+			HHX_init_rebuild_db DBR_READONLY
+		} else {
+			HHX_init_extract_db
+		}
+	
+		db_num = HHX_select_all()
+		repeat db_num
+			c = HHX_get_next()
+			db_name = hhxdata(c, C_NAME)
+			m_keywordDataBase += db_name + "\n"
+		loop
+		AutoCompleteSetKeyword m_keywordDataBase
+*@
+		chdir curdir
+		return
+	
+	*OnScriptEditorProc
+		scriptEditor_ScriptEditorProc
+		return
+	#deffunc local scriptEditor_ScriptEditorProc\
+		local hspctx,\
+		local hCtl, local uMsg, local wp, local lp,\
+		local szLine, local caretLine, local caretPos,\
+		local szSpaceBuf,\
+		local startLine, local startPos, local endLine, local endPos,\
+		local nLength,\
+		local i, local j
+	
+		mref hspctx, 68
+	
+		hCtl = callbkarg(0)
+		uMsg = callbkarg(1)
+		wp = callbkarg(2)
+		lp = callbkarg(3)
+		hspctx(9) = wp
+		hspctx(10) = lp
+	
+		switch (uMsg)
+		case WM_CHAR
+			switch (wp)
+				case '#'
+				case '*'
+				case '}'
+					ScriptEditorGetCaretPosition m_selectedID, startLine, startPos, endLine, endPos
+					ScriptEditorGetLineText m_selectedID, szLine, startLine
+	
+					i = startPos - 1
+					repeat
+						if (i >= 0) {
+							if (peek(szLine, i) = ' ' || peek(szLine, i) == '\t') {
+								i--
+								continue
+							}
+						}
+						break
+					loop
+					if (i < 0) {
+						if (wp == '#' || wp == '*') {
+							j = 0
+						} else {
+							if (startPos > 0) {
+								j = startPos - 1
+							} else {
+								j = 0
+							}
+						}
+						Footy2SetSel m_selectedID, startLine, j, endLine, endPos, false
+					}
+					if (lp & 0xff0000) {
+						szInsBuf = wp
+					}
+					Footy2SetSelTextA m_selectedID, varptr(szInsBuf)
+					swbreak
+				default
+					CallWindowProc m_lpfnDefFooty, hCtl, uMsg, wp, lp
+					swbreak
+			swend
+			
+			if (m_selectedID >= 0) {
+				Footy2GetCaretPosition m_selectedID, varptr(caretLine), varptr(caretPos)
+				ScriptEditorGetLineText m_selectedID, szLine, caretLine
+				AutoCompleteBegin szLine, caretPos
+			}
+			swbreak
+		case WM_KEYDOWN
+			switch (wp)
+				case VK_UP
+				case VK_DOWN
+					if (AutoCompleteWndIsShow() == false) {
+						CallWindowProc m_lpfnDefFooty, hCtl, uMsg, wp, lp
+					} else {
+						AutoCompleteSelect wp
+					}
+					swbreak
+				case VK_RETURN
+					if (AutoCompleteWndIsShow() == true && AutoCompleteGetCurSel() != -1) {
+						AutoCompleteEnter
+						swbreak
+					}
+	
+					sdim szSpaceBuf
+	
+					ScriptEditorGetCaretPosition m_selectedID, startLine, startPos, endLine, endPos
+					ScriptEditorGetLineText m_selectedID, szLine, startLine : nLength = stat
+	
+					i = endPos
+					repeat
+						if (i < nLength && (peek(szLine, i) == ' ' || peek(szLine, i) == '\t')) {
+							i++
+							endPos++
+							continue
+						}
+						break
+					loop
+	
+					szSpaceBuf = "\n"
+	
+					i = nLength - 1
+					repeat
+						if (i >= 0) {
+							if (peek(szLine, i) == ' ' || peek(szLine, i) == '\t') {
+								i--
+								continue
+							}
+							break
+						}
+						break
+					loop
+					if (i >= 0) {
+						if (peek(szLine, i) == '{') {
+							szSpaceBuf += "\t"
+						}
+					}
+					i = 0
+					repeat
+						if (i < nLength) {
+							if (peek(szLine, i) == ' ' || peek(szLine, i) == '\t') {
+								poke szSpaceBuf, strlen(szSpaceBuf), peek(szLine, i)
+								i++
+								continue
+							}
+						}
+						break
+					loop
+					if (peek(szLine, i) == 0 || i >= startPos) {
+						startPos = 1
+					} else : if ((peek(szLine, i) == '*' || peek(szLine, i) == '#') && i < startPos) {
+						szSpaceBuf += "\t"
+					}
+	
+					Footy2SetSel m_selectedID, startLine, startPos, endLine, endPos, false
+					Footy2SetSelTextA m_selectedID, varptr(szSpaceBuf)
+					swbreak
+				case VK_ESCAPE
+					AutoCompleteEnd
+					swbreak
+				default
+					CallWindowProc m_lpfnDefFooty, hCtl, uMsg, wp, lp
+					swbreak
+			swend
+			swbreak
+		case WM_NOTIFY
+			CallWindowProc m_lpfnDefFooty, hCtl, uMsg, wp, lp
+			swbreak
+		case WM_COMMAND
+			if (lp == 0) {
+				switch (LOWORD(wp))
+				default
+					sendmsg m_hParentWnd, WM_COMMAND, wp, lp
+					swbreak
+				swend
+			}
+			if (lp == AutoCompleteWndGetWnd()) {
+				if (HIWORD(wp) == 0x00000002/*LBN_DBLCLK*/) {
+					Footy2GetCaretPosition m_selectedID, varptr(caretLine), varptr(caretPos)
+					Footy2SetSel m_selectedID, caretLine, AutoCompleteGetKeywordStartPos(), caretLine, AutoCompleteGetKeywordEndPos(), false
+					Footy2SetSelTextA m_selectedID, AutoCompleteGetOutputKeyword()
+				}
+			}
+			swbreak
+		case WM_CONTEXTMENU
+			TrackPopupMenu m_hContextMenu, 0, ginfo_mx, ginfo_my, 0, m_hwnd(m_selectedID), 0
+			return
+		default
+			return CallWindowProc(m_lpfnDefFooty, hCtl, uMsg, wp, lp)
+		swend
+		return
+	
+	*OnScriptEditorFocus
+		scriptEditor_ScriptEditorFocus
+		return
+	#deffunc local scriptEditor_ScriptEditorFocus\
+		local nID, local pData, local nView, local bFocused
+	
+		nID = callbkarg(0)
+		pData = callbkarg(1)
+		nView = callbkarg(2)
+		bFocused = callbkarg(3)
+	
+		if (bFocused == false) {
+			// フォーカスを失った
+			if (GetFocus() != AutoCompleteWndGetWnd()) {
+				AutoCompleteEnd
+			}
+		} else {
+			// フォーカスを得た
+			m_selectedID = nID
+			if (m_selectedID >= 0) {
+				AutoCompleteEnd
+				AutoCompleteWndSetParent m_hwnd(m_selectedID)
+			}
+		}
+		return
+	
+	*OnScriptEditorTextModified
+		scriptEditor_ScriptEditorTextModified
+		return
+	#deffunc local scriptEditor_ScriptEditorTextModified\
+		local nID, local pData, local nCause
+	
+		nID = callbkarg(0)
+		pData = callbkarg(1)
+		nCause = callbkarg(2)
+	
+		sendmsg m_hParentWnd, WM_COMMAND, MAKELONG(nID, 0x0400/*EN_UPDATE*/), m_hwnd(nID)
+		return
+
+	#deffunc ScriptEditorCreate str _filePath,\
+		local lineData,\
+		local index,\
+		local keywordGroup, local keywordName
+	
+		Footy2Create hwnd, 0, 0, 0, 0, VIEWMODE_INVISIBLE
+		id = stat
+		m_hwnd(id) = Footy2GetWnd(id)
+		SetStyle m_hwnd(id), GWL_STYLE, WS_CLIPCHILDREN | WS_CLIPSIBLINGS
+	
+		m_lpfnDefFooty = GetWindowLong(m_hwnd(id), GWL_WNDPROC)
+		SetWindowLong m_hwnd(id), GWL_WNDPROC, varptr(m_lpfnScriptEditorProc)
+		Footy2SetFuncFocus id, varptr(m_lpfnScriptEditorFocus), 0
+		Footy2SetFuncTextModified id, varptr(m_lpfnScriptEditorTextModified), 0
+	
+		Footy2TextFromFile id, _filePath, CSM_AUTOMATIC
+		m_filePath(id) = _filePath
+	
+#ifdef _debug
+		iniFileName = dir_cur + "\\" + ProductName + ".ini"
+#else
+		iniFileName = dir_exe + "\\" + ProductName + ".ini"
+#endif
+	
+		m_fontFace = msgothic
+		m_fontSize = 10
+	
+		m_underLineVisible = false
+		m_markVisible = EDM_FULL_SPACE | EDM_EOF
+		m_tabWidth = 4
+		m_rulerheight = 10
+		m_lineNumWidth = 50
+		m_marginHeight = 2
+	
+		Footy2SetFontFace id, FFM_ANSI_CHARSET, m_fontFace, false
+		Footy2SetFontSize id, m_fontSize, false
+		
+		Footy2SetMetrics id, SM_UNDERLINE_VISIBLE, m_underLineVisible, false
+		Footy2SetMetrics id, SM_MARK_VISIBLE, m_markVisible, false
+		Footy2SetMetrics id, SM_RULER_HEIGHT, m_rulerheight, false
+		Footy2SetMetrics id, SM_LINENUM_WIDTH, m_lineNumWidth, false
+	
+		repeat 19
+			Footy2SetColor id, cnt, SettingsGetScriptEditorColor(cnt), true
+		loop
+		
+		Footy2AddEmphasisA id, "\\\\", "", EMP_LINE_BETWEEN, 0, 4, 2, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorStringColor()
+		Footy2AddEmphasisA id, "\\\"", "", EMP_LINE_BETWEEN, 0, 4, 2, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorStringColor()
+		Footy2AddEmphasisA id, "\"", "\"", EMP_LINE_BETWEEN, 0, 1, 1, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorStringColor()
+		Footy2AddEmphasisA id, "'", "'", EMP_LINE_BETWEEN, 0, 1, 1, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorStringColor()
+		Footy2AddEmphasisA id, "{\"", "\"}", EMP_MULTI_BETWEEN, 0, 1, 1, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorStringColor()
+		Footy2AddEmphasisA id, "/*", "*/", EMP_MULTI_BETWEEN, 0, 3, 1 | 32, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorCommentColor()
+		Footy2AddEmphasisA id, ";", "", EMP_LINE_AFTER, 0, 3, 1 | 32, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorCommentColor()
+		Footy2AddEmphasisA id, "//", "", EMP_LINE_AFTER, 0, 3, 1 | 32, EMP_IND_ALLOW_ALL, SettingsGetScriptEditorCommentColor()
+		Footy2AddEmphasisA id, "*", "", EMP_LINE_AFTER, EMPFLAG_HEAD, 5, 1, EMP_IND_ASCII_LETTER | EMP_IND_UNDERBAR, SettingsGetScriptEditorLabelColor()
+	
+#if 0
+		sdim lineData
+		index = 0
+		repeat m_countOfKeywords
+			getstr lineData, m_keywordDataBase, index
+			index += strsize
+	
+			split lineData, "\t", keywordGroup, keywordName
+		
+			switch (keywordGroup)
+			case "Statement"
+				Footy2AddEmphasisA id, keywordName, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS, SettingsGetScriptEditorStatementColor()
+				swbreak
+			case "Function"
+				Footy2AddEmphasisA id, keywordName, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS, SettingsGetScriptEditorFunctionColor()
+				swbreak
+			case "Macro"
+				Footy2AddEmphasisA id, keywordName, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS | EMP_IND_OTHER_ASCII_SIGN, SettingsGetScriptEditorMacroColor()
+				swbreak
+			case "Preprocessor"
+				Footy2AddEmphasisA id, keywordName, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS, SettingsGetScriptEditorPreprocessorColor()
+				swbreak
+			case "SystemVariable"
+				Footy2AddEmphasisA id, keywordName, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS | EMP_IND_OTHER_ASCII_SIGN, SettingsGetScriptEditorSystemVariableColor()
+				swbreak
+			swend
+		loop
+		
+		Footy2FlushEmphasis id
+#endif
+	
+		db_num = HHX_select_all()
+		repeat db_num
+			c = HHX_get_next()
+			db_name = hhxdata(c, C_NAME)
+			db_group = hhxdata(c, C_GROUP)
+			db_prm = hhxdata(c, C_PRM)
+			if (instr(db_group, 0, "プリプロセッサ命令") >= 0) {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS, SettingsGetScriptEditorPreprocessorColor()
+			} else : if (instr(db_group, 0, "システム変数") >= 0) {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS | EMP_IND_OTHER_ASCII_SIGN, SettingsGetScriptEditorSystemVariableColor()
+			} else : if (instr(db_group, 0, "マクロ") >= 0) {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS | EMP_IND_OTHER_ASCII_SIGN, SettingsGetScriptEditorMacroColor()
+			} else : if (db_prm == "") {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS, SettingsGetScriptEditorStatementColor()
+			} else : if (peek(db_prm) == '(') {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS | EMP_IND_PARENTHESIS, SettingsGetScriptEditorFunctionColor()
+			} else {
+				Footy2AddEmphasisA id, db_name, 0, EMP_WORD, 0, 1, 1, EMP_IND_BLANKS, SettingsGetScriptEditorStatementColor()
+			}
+		loop
+		
+		Footy2FlushEmphasis id
+	
+		Footy2ChangeView id, VIEWMODE_NORMAL
+		return id
+
+	#deffunc ScriptEditorDestroy int _id
+		SetWindowLong m_hwnd(_id), GWL_WNDPROC, m_lpfnDefFooty
+		Footy2Delete _id
+		return
+
+	#defcfunc ScriptEditorGetWnd int _id
+		return m_hwnd(_id)
+	
+	#deffunc ScriptEditorSetContextMenu int _hmenu
+		m_hContextMenu = _hmenu
+		return
+
+	#deffunc ScriptEditorMove int _id, int _x, int _y, int _width, int _height
+		Footy2Move _id, _x, _y, _width, _height
+		return
+	
+	#deffunc ScriptEditorSaveToFile int _id
+		Footy2SaveToFile _id, m_filePath(_id), CSM_AUTOMATIC, LM_AUTOMATIC
+		return
+	
+	#deffunc ScriptEditorGetLineText int _id, var _szLine, int _nLine,\
+		local nLength
+	
+		nLength = Footy2GetLineLengthA(_id, _nLine)
+		sdim _szLine, nLength + 1
+		Footy2GetLineA _id, varptr(_szLine), _nLine, nLength + 1
+		return nLength
+	
+	#deffunc ScriptEditorGetCaretPosition int _id, var _startLine, var _startPos, var _endLine, var _endPos
+		Footy2GetSel _id, varptr(_startLine), varptr(_startPos), varptr(_endLine), varptr(_endPos)
+		if (stat == FOOTY2ERR_NOTSELECTED) {
+			Footy2GetCaretPosition _id, varptr(_startLine), varptr(_startPos)
+			_endLine = _startLine
+			_endPos = _startPos
+		}
+		return
+	
+	#defcfunc ScriptEditorGetSelLength int _id
+		return Footy2GetSelLength(_id)
+	
+	#defcfunc ScriptEditorIsEdited int _id
+		return Footy2IsEdited(_id)
+	
+	#deffunc ScriptEditorUndo int _id
+		Footy2Undo _id
+		return
+	
+	#deffunc ScriptEditorRedo int _id
+		Footy2Redo _id
+		return
+	
+	#deffunc ScriptEditorCut int _id
+		Footy2Cut _id
+		return
+	
+	#deffunc ScriptEditorCopy int _id
+		Footy2Copy _id
+		return
+	
+	#deffunc ScriptEditorPaste int _id
+		Footy2Paste _id
+		return
+		
+	#deffunc ScriptEditorSelectAll int _id
+		Footy2SelectAll _id
+		return
+	
+	#deffunc ScriptEditorSetFocus int _id
+		Footy2SetFocus _id
+		return
+	
+	#deffunc ScriptEditorSetCaretPosition int _id, int _caretLine, int _caretPos
+		Footy2SetCaretPosition _id, _caretLine, _caretPos, true
+		return
+	
+	#defcfunc ScriptEditorGetLines int _id
+		return Footy2GetLines(_id)
+	
+	#deffunc ScriptEditorSearch int _id, str _string, int _flags
+		Footy2Search _id, _string, _flags
+		return
+	
+	#deffunc ScriptEditorSetSelText int _id, str _string
+		Footy2SetSelText _id, _string
+		return
+
+#global
+
+	ScriptEditorInit
+
+#endif

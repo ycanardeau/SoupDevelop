@@ -1,0 +1,39 @@
+
+#include "user32.as"
+
+	// NewProjectDialog
+	NewProjectDialog = ginfo_newid
+	screen NewProjectDialog, 480, 280, screen_fixedsize | screen_hide
+	title "新しいプロジェクト"
+	hNewProjectDialog = hwnd
+	SetWindowLong hwnd, GWL_HWNDPARENT, m_hParentWnd
+	SetStyle hwnd, GWL_STYLE, 0, WS_MINIMIZEBOX
+	syscolor 15
+	boxf
+
+	// label1
+	sysfont 17
+	syscolor 18
+	pos 16, 212
+	mes "プロジェクト名:"
+	
+	// projectNameTextBox
+	pos 88, 208
+	objsize 376, 19
+	sdim projectNameTextBox, 32767
+	projectNameTextBox = ""
+	input projectNameTextBox, , , 32767
+	hprojectNameTextBox = objinfo_hwnd(stat)
+	
+	// OKButton
+	pos 286, 235
+	objsize 85, 29
+	button "OK", *OKButton_Clicked
+	hOKButton = objinfo_hwnd(stat)
+	sendmsg hOKButton, BM_SETSTYLE, BS_DEFPUSHBUTTON, true
+
+	// cancelButton
+	pos 379, 235
+	objsize 85, 29
+	button "キャンセル", *cancelButton_Clicked
+	hcancelButton = objinfo_hwnd(stat)

@@ -1,0 +1,141 @@
+
+#ifndef mod_AboutDialog
+
+#include "user32.as"
+#include "shell32.as"
+	
+#module mod_AboutDialog
+	
+	#const IconSize 32
+	
+	#deffunc AboutDialogInit
+		dim m_parentWndID
+		dim m_hParentWnd
+		dim m_wndID
+		dim m_hwnd
+		return
+	
+	#deffunc AboutDialogCreate\
+		local selWndID,\
+		local shfileinfo,\
+		local text,\
+		local rect,\
+		local fontSize,\
+		local cyEditBox
+		
+		selWndID = ginfo_sel
+		m_parentWndID = selWndID
+		m_hParentWnd = hwnd
+		
+		m_wndID = ginfo_newid
+		screen m_wndID, 480, 300, screen_fixedsize | screen_hide
+			title ProductName + " について"
+			m_hwnd = hwnd
+			SetWindowLong m_hwnd, GWL_HWNDPARENT, m_hParentWnd
+			SetStyle m_hwnd, GWL_STYLE, 0, WS_MINIMIZEBOX
+			syscolor 15 : boxf
+			syscolor 8
+			
+			sdim text
+			dim rect, 4
+			
+			DrawIconEx hdc, ginfo_winx - 32 >> 1, 10, LoadImage(hinstance, 128, IMAGE_ICON, IconSize, IconSize, LR_SHARED), 32, 32, 0, null, DI_NORMAL
+			
+			fontSize = 32
+			font "MS UI Gothic", fontSize, 1 | 16
+			
+			text = ProductName
+			rect = 0, 8 + 32 + 8, ginfo_winx, 8 + 32 + 8 + fontSize
+			DrawText hdc, varptr(text), strlen(text), varptr(rect), DT_CENTER | DT_VCENTER
+			
+			fontSize = 12
+			font "MS UI Gothic", fontSize, 16
+			
+			text = "Version " + ProductVersion
+			rect = 0, rect(3) + 8, ginfo_winx, rect(3) + 8 + fontSize
+			DrawText hdc, varptr(text), strlen(text), varptr(rect), DT_CENTER | DT_VCENTER
+			
+			text = "HSP3.X のための統合開発環境です。"
+			rect = 0, rect(3) + 8, ginfo_winx, rect(3) + 8 + fontSize
+			DrawText hdc, varptr(text), strlen(text), varptr(rect), DT_CENTER | DT_VCENTER
+			
+			font "MS UI Gothic", fontSize, 4 | 16
+			color 0, 0, 255
+			text = ""//ProductName + " のウェブサイト"
+			rect = 0, rect(3) + 8, ginfo_winx, rect(3) + 8 + fontSize
+			DrawText hdc, varptr(text), strlen(text), varptr(rect), DT_CENTER | DT_VCENTER
+			font "MS UI Gothic", fontSize, 16
+			syscolor 8
+			
+			text = "Copyright (C) 2013 Aigamo"
+			rect = 0, rect(3) + 8, ginfo_winx, rect(3) + 8 + fontSize
+			DrawText hdc, varptr(text), strlen(text), varptr(rect), DT_CENTER | DT_VCENTER
+			
+			redraw 1
+			
+			objsize 96, 28
+			pos 16, ginfo_winy - 28 - 16 : button gosub "クレジット", *CreditButton_Click : hCreditButton = objinfo_hwnd(stat)
+			ShowWindow hCreditButton, SW_HIDE
+			pos 16 + 96 + 8, ginfo_winy - 28 - 16 : button gosub "ウェブサイト", *WebSiteButton_Click : hWebSiteButton = objinfo_hwnd(stat)
+			ShowWindow hWebSiteButton, SW_HIDE
+			pos ginfo_winx - 96 - 16, ginfo_winy - 28 - 16 : button gosub "閉じる", *CloseButton_Click : hCloseButton = objinfo_hwnd(stat)
+			sendmsg hCloseButton, BM_SETSTYLE, BS_DEFPUSHBUTTON, true
+			
+			oncmd gosub *OnClose, WM_CLOSE
+		
+		gsel selWndID
+		return
+	
+	*CreditButton_Click
+		dialog "クレジット"
+		return
+	
+	*WebSiteButton_Click
+		dialog "ウェブサイト"
+		//exec "http://sites.google.com/site/aigamorengou/software/soupdevelop/", 16
+		return
+	
+	*CloseButton_Click
+		sendmsg m_hwnd, WM_CLOSE, 0, 0
+		return
+	
+	*OnClose
+		AboutDialogHide
+		return 0
+	
+	#defcfunc AboutDialogGetWndID
+		return m_wndID
+	
+	#deffunc AboutDialogShow\
+		local rect
+	
+		dim rect, 4
+	
+		m_hSelectedFocus = GetFocus()
+	
+		SetFocus m_hParentWnd
+		gsel m_parentWndID
+	
+		GetWindowRect m_hParentWnd, varptr(rect)
+		rect(2) -= rect(0) : rect(3) -= rect(1)
+	
+		EnableWindow m_hParentWnd, 0
+	
+		gsel m_wndID
+		width , , rect(0) + (rect(2) - ginfo_sizex) / 2, rect(1) + (rect(3) - ginfo_sizey) / 2
+		gsel m_wndID, 1
+	
+		SetFocus hCloseButton
+		return
+	
+	#deffunc AboutDialogHide
+		gsel m_parentWndID, 1
+		gsel m_wndID, -1
+		EnableWindow m_hParentWnd, 1
+		gsel m_parentWndID, 1
+		SetFocus m_hSelectedFocus
+		return
+	
+#global
+
+#endif

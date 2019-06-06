@@ -1,0 +1,467 @@
+
+#ifndef mod_CodeGenerator
+
+#include "ObjectList.hsp"
+
+#module mod_CodeGenerator
+
+	#deffunc CodeGeneratorInit
+		sdim m_script
+		sdim m_footer
+		return
+	
+	#deffunc CodeGeneratorGenerate var _objectList,\
+		local name, local value,\
+		local windowStyle, local extendedWindowStyle,\
+		local fontStyle,\
+		local mesboxStyle,\
+		local b, local tag_,\
+		local i, local l, local sindo,\
+		local tag, local ct, local rect,\
+		local kk, local h, local k,\
+		local text, local commandID
+	
+		#define ctype GetValue(%1) ObjectListGetValueByName(_objectList, cnt, %1)
+	
+		m_script = ""
+		m_footer = ""
+	
+		m_script += "\n#include \"user32.as\""
+		
+		repeat ObjectListGetCount(_objectList)
+			if (ObjectListIsUse(_objectList, cnt) != 0) {
+				name = ObjectListGetValueByName(_objectList, cnt, "Name")
+	
+				m_script += "\n"
+				m_script += "\n\t// " + name
+				switch (ObjectListGetType(_objectList, cnt))
+				case "Form"
+					m_script += "\n\t" + name + " = " + GetValue("WindowID")
+					m_script += "\n\t"
+					if (GetValue("InitializationType") == "Bgscr") {
+						m_script += "bgscr"
+					} else {
+						m_script += "screen"
+					}
+					m_script += " " + name + ", ginfo_dispx, ginfo_dispy, screen_hide"
+					m_footer += "\n\twidth " + GetValue("Width") + ", " + GetValue("Height")
+					if (GetValue("StartPosition") == "CenterScreen") {
+						m_footer += ", ginfo_dispx - " + GetValue("Width") + " >> 1"
+						m_footer += ", ginfo_dispy - " + GetValue("Height") + " >> 1"
+					}
+					m_script += "\n\ttitle \"" + GetValue("Text") + "\""
+					m_script += "\n\th" + name + " = hwnd"
+					windowStyle = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_OVERLAPPED
+					extendedWindowStyle = WS_EX_LEFT | WS_EX_LTRREADING | WS_EX_RIGHTSCROLLBAR | WS_EX_CONTROLPARENT | WS_EX_APPWINDOW
+					switch (GetValue("FormBorderStyle"))
+					case "None"
+						swbreak
+					case "FixedSingle"
+						windowStyle |= (WS_OVERLAPPED | WS_BORDER | WS_DLGFRAME | WS_SYSMENU)
+						swbreak
+					case "Fixed3D"
+						windowStyle |= (WS_BORDER | WS_DLGFRAME | WS_SYSMENU)
+						extendedWindowStyle |= (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE)
+						swbreak
+					case "FixedDialog"
+						windowStyle |= (WS_BORDER | WS_DLGFRAME | WS_SYSMENU)
+						extendedWindowStyle |= (WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME)
+						swbreak
+					case "Sizable"
+						windowStyle |= (WS_BORDER | WS_DLGFRAME | WS_SYSMENU | WS_THICKFRAME)
+						extendedWindowStyle |= (WS_EX_WINDOWEDGE)
+						swbreak
+					case "FixedToolWindow"
+						windowStyle |= (WS_BORDER | WS_DLGFRAME | WS_SYSMENU)
+						extendedWindowStyle |= (WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW)
+						swbreak
+					case "SizableToolWindow"
+						windowStyle |= (WS_BORDER | WS_DLGFRAME | WS_SYSMENU | WS_THICKFRAME)
+						extendedWindowStyle |= (WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW)
+						swbreak
+					swend
+					if (GetValue("MaximizeBox") == "True") {
+						windowStyle |= WS_MAXIMIZEBOX
+					}
+					if (GetValue("MinimizeBox") == "True") {
+						windowStyle |= WS_MINIMIZEBOX
+					}
+					m_script += "\n\tSetWindowLong hwnd, " + GWL_STYLE + ", " + strf("$%08x", windowStyle)
+					m_script += "\n\tSetWindowLong hwnd, " + GWL_EXSTYLE + ", " + strf("$%08x", extendedWindowStyle)
+					generateColor GetValue("BackColor")
+					m_script += "\n\tboxf"
+	
+					if (GetValue("Active") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Active") + ", " + strf("$%08x", WM_ACTIVATE)
+					}
+					if (GetValue("Command") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Command") + ", " + strf("$%08x", WM_COMMAND)
+					}
+					if (GetValue("Create") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Create") + ", " + strf("$%08x", WM_CREATE)
+					}
+					if (GetValue("Destroy") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Destroy") + ", " + strf("$%08x", WM_DESTROY)
+					}
+					if (GetValue("DropFiles") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("DropFiles") + ", " + strf("$%08x", WM_DROPFILES)
+					}
+					if (GetValue("HScroll") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("HScroll") + ", " + strf("$%08x", WM_HSCROLL)
+					}
+					if (GetValue("KeyDown") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("KeyDown") + ", " + strf("$%08x", WM_KEYDOWN)
+					}
+					if (GetValue("KeyPress") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("KeyPress") + ", " + strf("$%08x", WM_CHAR)
+					}
+					if (GetValue("KeyUp") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("KeyUp") + ", " + strf("$%08x", WM_KEYUP)
+					}
+					if (GetValue("LButtonDblClick") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("LButtonDblClick") + ", " + strf("$%08x", WM_LBUTTONDBLCLK)
+					}
+					if (GetValue("LButtonDown") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("LButtonDown") + ", " + strf("$%08x", WM_LBUTTONDOWN)
+					}
+					if (GetValue("LButtonUp") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("LButtonUp") + ", " + strf("$%08x", WM_LBUTTONUP)
+					}
+					if (GetValue("MButtonDblClick") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("MButtonDblClick") + ", " + strf("$%08x", WM_MBUTTONDBLCLK)
+					}
+					if (GetValue("MButtonDown") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("MButtonDown") + ", " + strf("$%08x", WM_MBUTTONDOWN)
+					}
+					if (GetValue("MButtonUp") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("MButtonUp") + ", " + strf("$%08x", WM_MBUTTONUP)
+					}
+					if (GetValue("MouseMove") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("MouseMove") + ", " + strf("$%08x", WM_MOUSEMOVE)
+					}
+					if (GetValue("Move") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Move") + ", " + strf("$%08x", WM_MOVE)
+					}
+					if (GetValue("Notify") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Notify") + ", " + strf("$%08x", WM_NOTIFY)
+					}
+					if (GetValue("Paint") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Paint") + ", " + strf("$%08x", WM_PAINT)
+					}
+					if (GetValue("QueryClose") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("QueryClose") + ", " + strf("$%08x", WM_CLOSE)
+					}
+					if (GetValue("RButtonDblClick") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("RButtonDblClick") + ", " + strf("$%08x", WM_RBUTTONDBLCLK)
+					}
+					if (GetValue("RButtonDown") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("RButtonDown") + ", " + strf("$%08x", WM_RBUTTONDOWN)
+					}
+					if (GetValue("RButtonUp") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("RButtonUp") + ", " + strf("$%08x", WM_RBUTTONUP)
+					}
+					if (GetValue("Resize") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Resize") + ", " + strf("$%08x", WM_SIZE)
+					}
+					if (GetValue("SetFocus") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("SetFocus") + ", " + strf("$%08x", WM_SETFOCUS)
+					}
+					if (GetValue("Timer") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("Timer") + ", " + strf("$%08x", WM_TIMER)
+					}
+					if (GetValue("VScroll") != "") {
+						m_script += "\n\toncmd gosub *" + GetValue("VScroll") + ", " + strf("$%08x", WM_VSCROLL)
+					}
+					swbreak
+				case "Button"
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\tbutton"
+					if (GetValue("JumpType") == "Gosub") {
+						m_script += " gosub"
+					}
+					m_script += " \"" + GetValue("Text") + "\", *" + GetValue("LabelName")
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					swbreak
+				case "CheckBox"
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\t" + name + " = "
+					if (GetValue("Checked") == "False") {
+						m_script += "0"
+					} else {
+						m_script += "1"
+					}
+					m_script += "\n\tchkbox \"" + GetValue("Text") + "\", " + name
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					swbreak
+				case "ComboBox"
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\tcombox " + name + ", " + GetValue("DropDownHeight") + ", \"" + GetValue("Text") + "\""
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					swbreak
+				case "Label"
+					fontStyle = 0
+					if (GetValue("FontBold") != "False") {
+						fontStyle |= 1
+					}
+					if (GetValue("FontItalic") != "False") {
+						fontStyle |= 2
+					}
+					if (GetValue("FontUnderline") != "False") {
+						fontStyle |= 4
+					}
+					if (GetValue("FontStrikeout") != "False") {
+						fontStyle |= 8
+					}
+					if (GetValue("FontGdiVerticalFont") != "False") {
+						fontStyle |= 16
+					}
+					m_script += "\n\tfont \"" + GetValue("FontName") + "\", " + GetValue("FontSize") + ", " + fontStyle
+					generateColor GetValue("ForeColor")
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tmes \"" + GetValue("Text") + "\""
+					swbreak
+				case "RadioButton"
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\t" + name + " = "
+					if (GetValue("Checked") == "False") {
+						m_script += "0"
+					} else {
+						m_script += "1"
+					}
+					m_script += "\n\tchkbox \"" + GetValue("Text") + "\", " + name
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					m_script += "\n\tsendmsg h" + name + ", $f4, $9"
+					swbreak
+				case "InputBox"
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\tsdim " + name + ", " + GetValue("MaxLength")
+					m_script += "\n\t" + name + " = \"" + GetValue("Text") + "\""
+					m_script += "\n\tinput " + name + ", , , " + GetValue("MaxLength")
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					swbreak
+				case "MessageBox"
+					mesboxStyle = 0
+					if (GetValue("ReadOnly") == "False") {
+						mesboxStyle |= 1
+					}
+					if (GetValue("HorizontalScrollBar") != "False") {
+						mesboxStyle |= 4
+					}
+					m_script += "\n\tpos " + GetValue("X") + ", " + GetValue("Y")
+					m_script += "\n\tobjsize " + GetValue("Width") + ", " + GetValue("Height")
+					m_script += "\n\tsdim " + name + ", " + GetValue("MaxLength")
+					m_script += "\n\t" + name + " = \"" + GetValue("Text") + "\""
+					m_script += "\n\tmesbox " + name + ", , , " + mesboxStyle + ", " + GetValue("MaxLength")
+					m_script += "\n\th" + name + " = objinfo_hwnd(stat)"
+					swbreak
+				case "MenuBar"
+					value = GetValue("Items")
+					strrep value, "\\n", "\n"
+					strrep value, "\\t", "\t"
+					b="" : tag_(0) = "" : i=0 : l=0 : sindo=1
+					sdim tag, 64, 2 : dim ct, 3 : dim rect, 4
+					notesel value
+					m_script += "\n\tCreateMenu"
+					m_script += "\n\tid = stat"
+					m_script += "\n\th" + name + " = id"
+					m_script += "\n\thmenu(" + sindo + ") = id"
+					repeat notemax + 2
+						noteget b, i
+						kk = instr(b, 0, ":")
+				
+						if (kk ! -1 || i == notemax + 1) {
+							ct(2) = ct(1)
+							ct(1) = ct(0)
+							tag(1) = tag(0)
+							h = 0
+							k = strmid(b, kk + 1, 1)
+							if (":" == k) {
+								tag(0) = strmid(b, kk + 2, strlen(b) - kk - 2)
+								ct(0) = 1
+								h = 1
+							}
+							if ("{" == k) {
+								ct(0) = 2
+								h = 1
+							}
+							if ("}" == k) {
+								ct(0) = 3
+								h=1
+							}
+							if ("-" == k) {
+								ct(0) = 4
+								h = 1
+							}
+							if (h = 0 && i ! notemax + 1) {
+								i++
+								continue
+							}
+							if (ct(1) == 0) {
+								i++
+								continue
+							}
+							if (ct(1) == 1 && ct(0) == 2) {
+								tag_(sindo) = tag(1)
+							}
+							if (ct(1) == 1 && ct(0) ! 2) {
+								l++
+								sdim text
+								sdim commandID
+								split tag(1), "|", text, commandID
+								if (commandID == "") {
+									commandID = "" + l
+								}
+								m_script += "\n\tAppendMenu hmenu(" + sindo + "), 0, " + commandID/*l*/ + ", \"" + text/*tag(1)*/ + "\""
+							}
+							if (ct(1) == 4&& ct(0) ! 2) {
+								m_script += "\n\tAppendMenu hmenu(" + sindo + "), $800, $0, \"\""
+							}
+							if (ct(1) == 2&& ct(2) == 1) {
+								sindo++
+								m_script += "\n\tCreatePopupMenu"
+								m_script += "\n\thmenu(" + sindo + ") = stat"
+							}
+							if (ct(1) == 3) {
+								sindo--
+								if (sindo < 1) {
+									sindo = 1
+								} else {
+									m_script += "\n\tAppendMenu hmenu(" + sindo+ "), $10, hmenu(" + (sindo + 1) + "), \"" + tag_(sindo) + "\""
+								}
+							}
+						}
+						i++
+						if (i == notemax + 2) {
+							break
+						}
+					loop
+					noteunsel
+					m_script += "\n\tSetMenu hwnd, h" + name
+					m_script += "\n\tDrawMenuBar hwnd"
+					swbreak
+				swend
+			}
+		loop
+		return
+	
+	#defcfunc CodeGeneratorGetScript
+		return m_script + "\n" + m_footer
+	
+	#deffunc local generateColor str _color
+		m_script += "\n\t"
+		switch (_color)
+		case "ActiveBorder"
+			m_script += "syscolor 10"
+			swbreak
+		case "ActiveCaption"
+			m_script += "syscolor 2"
+			swbreak
+		case "ActiveCaptionText"
+			m_script += "syscolor 9"
+			swbreak
+		case "AppWorkspace"
+			m_script += "syscolor 12"
+			swbreak
+		case "ButtonFace"
+			m_script += "syscolor 15"
+			swbreak
+		case "ButtonHighlight"
+			m_script += "syscolor 20"
+			swbreak
+		case "ButtonShadow"
+			m_script += "syscolor 16"
+			swbreak
+		case "Control"
+			m_script += "syscolor 15"
+			swbreak
+		case "ControlDark"
+			m_script += "syscolor 16"
+			swbreak
+		case "ControlDarkDark"
+			m_script += "syscolor 21"
+			swbreak
+		case "ControlLight"
+			m_script += "syscolor 22"
+			swbreak
+		case "ControlLightLight"
+			m_script += "syscolor 20"
+			swbreak
+		case "ControlText"
+			m_script += "syscolor 18"
+			swbreak
+		case "Desktop"
+			m_script += "syscolor 1"
+			swbreak
+		case "GradientActiveCaption"
+			m_script += "syscolor 27"
+			swbreak
+		case "GradientInactiveCaption"
+			m_script += "syscolor 28"
+			swbreak
+		case "GrayText"
+			m_script += "syscolor 17"
+			swbreak
+		case "Highlight"
+			m_script += "syscolor 13"
+			swbreak
+		case "HighlightText"
+			m_script += "syscolor 14"
+			swbreak
+		case "HotTrack"
+			m_script += "syscolor 26"
+			swbreak
+		case "InactiveBorder"
+			m_script += "syscolor 11"
+			swbreak
+		case "InactiveCaption"
+			m_script += "syscolor 3"
+			swbreak
+		case "InactiveCaptionText"
+			m_script += "syscolor 19"
+			swbreak
+		case "Info"
+			m_script += "syscolor 24"
+			swbreak
+		case "InfoText"
+			m_script += "syscolor 23"
+			swbreak
+		case "Menu"
+			m_script += "syscolor 4"
+			swbreak
+		case "MenuBar"
+			m_script += "syscolor 30"
+			swbreak
+		case "MenuHighlight"
+			m_script += "syscolor 29"
+			swbreak
+		case "MenuText"
+			m_script += "syscolor 7"
+			swbreak
+		case "ScrollBar"
+			m_script += "syscolor 0"
+			swbreak
+		case "Window"
+			m_script += "syscolor 5"
+			swbreak
+		case "WindowFrame"
+			m_script += "syscolor 6"
+			swbreak
+		case "WindowText"
+			m_script += "syscolor 8"
+			swbreak
+		default
+			m_script += "color " + _color
+			swbreak
+		swend
+		return
+
+#global
+
+	CodeGeneratorInit
+
+#endif

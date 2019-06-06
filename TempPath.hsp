@@ -1,0 +1,60 @@
+
+#ifndef mod_TempPath
+
+#include "kernel32.as"
+
+#module mod_TempPath
+
+#deffunc TempPathInit\
+	local tempPath,\
+	local fileList
+	
+	sdim m_tempPath
+	
+	sdim tempPath, MAX_PATH
+	GetTempPath MAX_PATH, varptr(tempPath)
+	
+	curdir = dir_cur
+	chdir tempPath
+	sdim fileList
+	dirlist fileList, ProductName, 5
+	if (stat == 0) {
+		mkdir ProductName
+	}
+	m_tempPath = tempPath + "\\" + ProductName
+	chdir curdir
+	return
+	
+#deffunc TempPathDestroy onexit,\
+	local curdir,\
+	local fileList,\
+	local lineData
+	
+	curdir = dir_cur
+	chdir m_tempPath
+	
+	sdim fileList
+	dirlist fileList, "*.*", 1
+	
+	sdim lineData
+	notesel fileList
+	repeat notemax
+		noteget lineData, 0
+		if (exist(lineData) != -1) {
+			delete lineData
+		}
+		notedel 0
+	loop
+	noteunsel
+	
+	chdir curdir
+	return
+	
+#defcfunc TempPathGet
+	return m_tempPath
+
+#global
+
+	TempPathInit
+
+#endif

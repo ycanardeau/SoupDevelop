@@ -1,0 +1,128 @@
+
+#ifndef mod_NewProjectDialog
+	
+#module mod_NewProjectDialog
+
+#deffunc NewProjectDialogInit
+	dim m_parentWndID
+	dim m_hParentWnd
+	
+	dim NewProjectDialog
+	
+	dim m_stat
+	dim m_refstr
+	mref m_stat, 64
+	mref m_refstr, 65
+	return
+	
+#deffunc NewProjectDialogCreate\
+	local selWndID
+	
+	selWndID = ginfo_sel
+	m_parentWndID = selWndID
+	m_hParentWnd = hwnd
+	
+#include "NewProjectDialog.hgs.hsp"
+	
+	oncmd *cancelButton_Clicked, WM_CLOSE
+	
+	gsel selWndID
+	return
+	
+*OnClose
+	NewProjectDialogHide
+	return 0
+	
+#deffunc NewProjectDialogShow\
+	local rect
+	
+	projectNameTextBox = ""
+	sendmsg hprojectNameTextBox, WM_SETTEXT, 0, varptr(projectNameTextBox)
+	
+	dim rect, 4
+	
+	m_hSelectedFocus = GetFocus()
+	
+	SetFocus m_hParentWnd
+	gsel m_parentWndID
+	
+	GetWindowRect m_hParentWnd, varptr(rect)
+	rect(2) -= rect(0) : rect(3) -= rect(1)
+	
+	EnableWindow m_hParentWnd, 0
+	
+	gsel NewProjectDialog
+	width , , rect(0) + (rect(2) - ginfo_sizex) / 2, rect(1) + (rect(3) - ginfo_sizey) / 2
+	gsel NewProjectDialog, 1
+	
+	SetFocus hprojectNameTextBox
+	
+	stop
+*dialogEnd
+	return
+	
+#deffunc NewProjectDialogHide
+	gsel m_parentWndID, 1
+	gsel NewProjectDialog, -1
+	EnableWindow m_hParentWnd, 1
+	gsel m_parentWndID, 1
+	SetFocus m_hSelectedFocus
+	return
+	
+*OKButton_Clicked
+	if (checkProjectName(projectNameTextBox) == false) {
+		dialog "無効なプロジェクト名です。", 1, ProductName
+		stop
+	}
+	NewProjectDialogHide
+	m_stat = 1
+	m_refstr = projectNameTextBox
+	goto *dialogEnd
+	
+*cancelButton_Clicked
+	NewProjectDialogHide
+	m_stat = 0
+	m_refstr = ""
+	goto *dialogEnd
+		
+#defcfunc local checkProjectName str _projectName,\
+	local projectName
+	
+	projectName = _projectName
+	if (projectName == "") {
+		return false
+	}
+	if (instr(projectName, 0, "\\") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "/") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, ":") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "*") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "?") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "\"") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "<") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, ">") != -1) {
+		return false
+	}
+	if (instr(projectName, 0, "|") != -1) {
+		return false
+	}
+	return true
+
+#global
+	
+	NewProjectDialogInit
+	
+#endif

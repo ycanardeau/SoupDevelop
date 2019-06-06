@@ -1,0 +1,79 @@
+#ifndef __CMD_SPLIT__
+#define __CMD_SPLIT__
+#module _CMD_SPLIT_
+#deffunc cmdSplit var buf, array fver, array pver, var prm_name, var prm_val
+
+	notesel buf
+	dim fver, 4 : fver = 0, 0, 0, 0
+	dim pver, 4 : pver = 0, 0, 0, 0
+	sdim prm_name, 1024
+	sdim prm_val, 1024
+	
+	repeat notemax
+		notesel buf
+		noteget tmp, cnt
+		// ゴミ取り
+		tmp = strtrim(tmp, 0, ' ')
+		tmp = strtrim(tmp, 3, '\t')
+		// 先頭がセミコロンの場合は無視
+		if strmid(tmp, 0, 1) == ";" : continue
+		if strmid(tmp, 0, 2) == "//" : continue
+		if tmp == "" : continue
+		
+		// (=) で分解する
+		sdim s, 64
+		split tmp, "=", s
+		
+		num = stat
+		// 分割数が2以上の場合のみ処理
+		if num >= 2{
+			name = strtrim(s(0), 0, ' ')
+			val = ""
+			repeat num - 1
+				if num - 2 == cnt{
+					// 最後の場合は = を付けない
+					val += s(1 + cnt)
+				}else{
+					// それ以外は = を付ける
+					val += s(1 + cnt) + "="
+				}
+			loop
+			
+			if name == "_FILEVERSION"{
+				sdim _v, 64
+				split val, ".", _v
+				repeat limit(stat, 0, 4)
+					fver(cnt) = int(_v(cnt))
+				loop
+			}else:if name == "_PRODUCTVERSION"{
+				sdim _v, 64
+				split val, ".", _v
+				repeat limit(stat, 0, 4)
+					pver(cnt) = int(_v(cnt))
+				loop
+			}else:if name == "FileVersion" | name == "ProductVersion"{
+				// 重複するためこの項目のみ無視する
+				continue
+			}else{
+				// それ以外は追加する
+				notesel prm_name
+				noteadd name
+				notesel prm_val
+				noteadd val
+			}
+		}
+	
+	loop
+return
+#global
+#endif
+/*
+dialog "txt",16
+if stat == 0 : end
+fname = refstr
+
+notesel buf
+noteload fname
+
+cmdSplit buf, fver, pver, name, val
+*/

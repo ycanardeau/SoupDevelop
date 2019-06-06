@@ -1,0 +1,85 @@
+
+#ifndef mod_Settings
+
+#include "INI.as"
+
+#module mod_Settings
+
+	#deffunc SettingsInit
+		sdim m_iniFilePath
+		m_iniFilePath = dir_cur + "\\" + ProductName + ".ini"
+	
+		if (exist(m_iniFilePath) == -1) {
+			bcopy "default.ini", "SoupDevelop.ini"
+		}
+		
+		sdim m_hspInstallPath, MAX_PATH
+		m_hspInstallPath = INIGetString("System", "HSPInstallPath", "", MAX_PATH, m_iniFilePath)
+	
+		sdim m_projectSavePath, MAX_PATH
+		m_projectSavePath = INIGetString("System", "ProjectSavePath", "", MAX_PATH, m_iniFilePath)
+	
+		m_debugWindow = GetPrivateProfileInt("System", "DebugWindow", 0, m_iniFilePath)
+	
+		dim m_scriptEditorColor, 19
+		m_scriptEditorColor(0)  = 0x000000, 0xffffff, 0x808000, 0x808000, 0x000080, 0x808000, 0x808000, 0x5a30c6, 0x84b229, 0xbd7531
+		m_scriptEditorColor(10) = 0x31e7ef, 0xdeebef, 0x000000, 0x000000, 0xcecb00, 0xff0000, 0xff0000, 0x40ff40, 0x40ff40
+		repeat 19
+			m_scriptEditorColor(cnt) = GetPrivateProfileInt("ScriptEditor", "Color(" + cnt + ")", m_scriptEditorColor(cnt), m_iniFilePath)
+		loop
+		m_scriptEditorStringColor = GetPrivateProfileInt("ScriptEditor", "StringColor", 0x007cce, m_iniFilePath)
+		m_scriptEditorCommentColor = GetPrivateProfileInt("ScriptEditor", "CommentColor", 0x009b00, m_iniFilePath)
+		m_scriptEditorLabelColor = GetPrivateProfileInt("ScriptEditor", "LabelColor", 0x00c0ff, m_iniFilePath)
+		m_scriptEditorStatementColor = GetPrivateProfileInt("ScriptEditor", "StatementColor", 0xe50000, m_iniFilePath)
+		m_scriptEditorFunctionColor = GetPrivateProfileInt("ScriptEditor", "FunctionColor", 0xe50000, m_iniFilePath)
+		m_scriptEditorMacroColor = GetPrivateProfileInt("ScriptEditor", "MacroColor", 0xe50000, m_iniFilePath)
+		m_scriptEditorPreprocessorColor = GetPrivateProfileInt("ScriptEditor", "PreprocessorColor", 0xe50000, m_iniFilePath)
+		m_scriptEditorSystemVariableColor = GetPrivateProfileInt("ScriptEditor", "SystemVariableColor", 0xe50000, m_iniFilePath)
+		return
+	
+	#defcfunc SettingsGetHSPInstallPath
+		return dir_exe
+	
+	#defcfunc SettingsGetProjectSavePath
+		return m_projectSavePath
+	
+	#deffunc SettingsSetProjectSavePath str _string
+		WritePrivateProfileString "System", "ProjectSavePath", _string, m_iniFilePath
+		m_projectSavePath = _string
+		return
+	
+	#defcfunc SettingsIsDebugWindow
+		return m_debugWindow
+	
+	#defcfunc SettingsGetScriptEditorColor int _id
+		return m_scriptEditorColor(_id)
+	
+	#defcfunc SettingsGetScriptEditorStringColor
+		return m_scriptEditorStringColor
+	
+	#defcfunc SettingsGetScriptEditorCommentColor
+		return m_scriptEditorCommentColor
+	
+	#defcfunc SettingsGetScriptEditorLabelColor
+		return m_scriptEditorLabelColor
+	
+	#defcfunc SettingsGetScriptEditorStatementColor
+		return m_scriptEditorStatementColor
+	
+	#defcfunc SettingsGetScriptEditorFunctionColor
+		return m_scriptEditorFunctionColor
+	
+	#defcfunc SettingsGetScriptEditorMacroColor
+		return m_scriptEditorMacroColor
+	
+	#defcfunc SettingsGetScriptEditorPreprocessorColor
+		return m_scriptEditorPreprocessorColor
+	
+	#defcfunc SettingsGetScriptEditorSystemVariableColor
+		return m_scriptEditorSystemVariableColor
+
+#global
+
+	SettingsInit
+
+#endif

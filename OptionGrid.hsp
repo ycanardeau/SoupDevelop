@@ -1,0 +1,109 @@
+
+#ifndef mod_OptionGrid
+
+#include "DataGrid.as"
+#include "TSVDataBase.as"
+
+#module mod_OptionGrid
+	
+#deffunc OptionGridInit
+	dim m_hParentWnd
+	dim m_wndID
+	dim m_hwnd
+	dim m_optionDataGridID
+	dim m_isEdit
+	return
+	
+#deffunc OptionGridCreate\
+	local selWndID
+	
+	selWndID = ginfo_sel
+	m_hParentWnd = hwnd
+	
+	m_wndID = ginfo_newid
+	bgscr m_wndID, ginfo_dispx, ginfo_dispy, screen_hide
+	m_hwnd = hwnd
+	SetStyle hwnd, GWL_STYLE, WS_CHILD, WS_POPUP
+	SetParent hwnd, m_hParentWnd
+	
+	DataGridCreate ginfo_newid, 0, 2
+	m_optionDataGridID = stat
+	DataGridSetCellWidth m_optionDataGridID, 0, 130
+	DataGridSetCellWidth m_optionDataGridID, 1, 350
+	
+	oncmd gosub *OnSize, WM_SIZE
+	oncmd gosub *OnCommand, WM_COMMAND
+	oncmd gosub *OnSetFocus, WM_SETFOCUS
+	
+	DataGridShow m_optionDataGridID
+	
+	gsel selWndID
+	return
+	
+*OnSize
+	OptionGrid_Size
+	return
+#deffunc OptionGrid_Size\
+	local selWndID
+	
+	selWndID = ginfo_sel
+	gsel ginfo_intid
+	
+	DataGridMove m_optionDataGridID, 0, 0, ginfo_winx, ginfo_winy
+	
+	gsel selWndID
+	return
+	
+*OnCommand
+	OptionGrid_Command
+	return
+#deffunc local OptionGrid_Command
+	if (lparam == DataGridGetWnd(m_optionDataGridID)) {
+		switch (HIWORD(wparam))
+		case 0x00000300/*EN_CHANGE*/
+			m_isEdit = true
+			sendmsg m_hParentWnd, WM_COMMAND, wparam, m_hwnd
+			swbreak
+		swend
+		return
+	}
+	sendmsg m_hParentWnd, WM_COMMAND, wparam, lparam
+	return
+	
+*OnSetFocus
+	SetFocus DataGridGetWnd(m_optionDataGridID)
+	return
+	
+#defcfunc OptionGridGetWnd
+	return m_hwnd//DataGridGetWnd(m_optionDataGridID)
+	
+#deffunc OptionGridHide
+	gsel m_wndID, -1
+	return
+	
+#defcfunc OptionGridGet
+	return DataGridGet(m_optionDataGridID)
+	
+#deffunc OptionGridSet str _data,\
+	local data
+	
+	data = _data
+	DataGridSetRows m_optionDataGridID, TSVDataBaseGetRows(data)
+	repeat TSVDataBaseGetRows(data)
+		DataGridSetCellStyle m_optionDataGridID, cnt, 0, DGCS_FIXED
+	loop
+	DataGridSet m_optionDataGridID, data
+	return
+	
+#defcfunc OptionGridIsEdit
+	return m_isEdit
+	
+#deffunc OptionGridReset
+	m_isEdit = false
+	return
+	
+#global
+	
+	OptionGridInit
+	
+#endif
